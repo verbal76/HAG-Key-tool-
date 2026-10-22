@@ -286,10 +286,15 @@ def _parse_apksigner(returncode: int, stdout: str, stderr: str) -> ApkInspection
     for m in re.finditer(r"Verified using (v[\d.]+) scheme[^:]*:\s*(true|false)", text):
         schemes[m.group(1)] = m.group(2) == "true"
     fps = []
-    for m in re.finditer(r"Signer (?:#\d+|\([^)]*\)) certificate SHA-256 digest:\s*([0-9a-fA-F]+)", text):
-        fp = format_fingerprint(m.group(1))
-        if fp not in fps:
-            fps.append(fp)
+    # Formats vary by build-tools version, e.g. "Signer #1 certificate SHA-256 digest: …",
+    # "V3.0 Signer: certificate SHA-256 digest: …", "Signer (minSdkVersion=…) certificate …".
+    # Lineage (key rotation history) lines are not signers and are excluded.
+    for line in text.splitlines():
+        m = re.match(r"\s*(?:V[\d.]+ )?Signer\b[^:]*:?\s*certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$", line)
+        if m and "lineage" not in line.lower():
+            fp = format_fingerprint(m.group(1))
+            if fp not in fps:
+                fps.append(fp)
     rotation = bool(re.search(r"Signer \(minSdkVersion|lineage", text, re.I)) or schemes.get("v3.1", False)
     if returncode != 0 or "DOES NOT VERIFY" in text:
         errors = [l.strip() for l in text.splitlines() if l.strip().startswith("ERROR")]
@@ -357,7 +362,8 @@ def compare_apk(inspection: ApkInspection, expected_sha256: str) -> Comparison:
                           ["Link or create an Android signing identity for this project to compare."])
     exp = normalize_fingerprint(expected_sha256)
     found = [normalize_fingerprint(f) for f in inspection.signer_sha256]
-    if exp in found and all(f == exp for f in found):
+    rotated_match = inspection.rotation_detected and exp in found
+    if exp in found and (all(f == exp for f in found) or rotated_match):
         if status == APK_VERIFIED:
             return Comparison(CMP_MATCH, CMP_TITLES[CMP_MATCH], notes)
         return Comparison(CMP_MATCH_UNVERIFIED, CMP_TITLES[CMP_MATCH_UNVERIFIED], [inspection.message] + notes)

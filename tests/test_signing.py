@@ -138,6 +138,19 @@ def test_apksigner_output_parsing():
     assert insp.status == android.APK_VERIFIED and insp.schemes == {"v1": False, "v2": True}
     assert android.normalize_fingerprint(insp.signer_sha256[0]) == "AB" * 32
     assert android.compare_apk(insp, ":".join(["AB"] * 32)).result == android.CMP_MATCH
+    # build-tools 37 format
+    new = ("Verifies\nVerified using v1 scheme (JAR signing): false\n"
+           "Verified using v2 scheme (APK Signature Scheme v2): true\n"
+           "Verified using v3 scheme (APK Signature Scheme v3): true\n"
+           "Verified using v3.1 scheme (APK Signature Scheme v3.1): false\n"
+           "Number of signers: 1\nV3.0 Signer: certificate DN: CN=x\n"
+           "V3.0 Signer: certificate SHA-256 digest: " + "cd" * 32 + "\n"
+           "V3.0 Signer: public key SHA-256 digest: " + "ef" * 32 + "\n")
+    insp = android._parse_apksigner(0, new, "")
+    assert insp.status == android.APK_VERIFIED and not insp.rotation_detected
+    assert [android.normalize_fingerprint(f) for f in insp.signer_sha256] == ["CD" * 32]
+    lineage = ok + "Signer #1 lineage certificate SHA-256 digest: " + "11" * 32 + "\n"
+    assert len(android._parse_apksigner(0, lineage, "").signer_sha256) == 1
     bad = android._parse_apksigner(1, "DOES NOT VERIFY\nERROR: APK Signature Scheme v2 signer #1: digest mismatch", "")
     assert bad.status == android.APK_INVALID
     assert android.compare_apk(bad, "AB").result == android.CMP_INVALID

@@ -38,6 +38,25 @@ def create_app(argv=None):
     return app
 
 
+def dispose(app) -> None:
+    """Tear down widgets while Qt is still fully alive.
+
+    Left to interpreter shutdown, PySide destroys the QApplication first and then deletes the
+    remaining Python-owned windows in arbitrary order, which can crash (seen as a segfault or
+    "pure virtual method called" on exit). Background tasks are awaited for the same reason.
+    """
+    import shiboken6
+    from PySide6.QtCore import QThreadPool
+    from . import clipboard
+
+    QThreadPool.globalInstance().waitForDone()
+    clipboard.shutdown()
+    for w in app.topLevelWidgets():
+        if shiboken6.isValid(w) and w.parent() is None:
+            shiboken6.delete(w)
+    app.processEvents()
+
+
 def run(argv=None) -> int:
     paths = default_paths()
     try:
@@ -51,7 +70,9 @@ def run(argv=None) -> int:
     win.open_last_profile()
     win.show()
     log.info("Started %s %s", APP_NAME, __version__)
-    return app.exec()
+    code = app.exec()
+    dispose(app)
+    return code
 
 
 def self_test(result_path: str) -> int:
@@ -87,6 +108,7 @@ def self_test(result_path: str) -> int:
         lines.append(f"pages: {win.nav.count()}")
         QTimer.singleShot(0, app.quit)
         app.exec()
+        dispose(app)
         lines.insert(0, "PASS")
         code = 0
     except Exception:

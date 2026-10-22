@@ -11,8 +11,8 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from hag_bsm.model import Profile  # noqa: E402
-from hag_bsm.ui import clipboard, dialogs  # noqa: E402
-from hag_bsm.ui.app import create_app  # noqa: E402
+from hag_bsm.ui import dialogs  # noqa: E402
+from hag_bsm.ui.app import create_app, dispose  # noqa: E402
 from hag_bsm.ui.context import AppContext  # noqa: E402
 from hag_bsm.ui.main_window import MainWindow  # noqa: E402
 
@@ -21,7 +21,7 @@ from hag_bsm.ui.main_window import MainWindow  # noqa: E402
 def qapp():
     app = create_app(["test"])
     yield app
-    clipboard.shutdown()  # what aboutToQuit does in the real application
+    dispose(app)  # what the real application does after its event loop ends
 
 
 @pytest.fixture
