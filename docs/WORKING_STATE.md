@@ -28,3 +28,13 @@ Recovery checkpoint for development sessions. Keep short and current.
 
 ## Notes
 - Legacy `hag_keytool/` CLI (first PR commit) left in place; superseded by this app.
+
+## Android APK (owner request: full feature parity, debug-signed for now)
+- `android/` Gradle project: `core` (pure Kotlin/JVM, BouncyCastle, kotlinx-serialization) — builds locally;
+  `apk` (JVM, Google `apksig`) and `app` (Compose UI, AndroidKeystore protector, SAF) — Google Maven is
+  blocked in this container, so these build only in CI. `HAGBSM_CORE_ONLY=1` limits settings to `core`.
+- Formats identical to Python (profile JSON, backup file, prompt text). Parity checked in CI:
+  `tools/parity_fixtures.py` (Python → fixtures incl. keytool keystores/backups) consumed by Kotlin tests;
+  `tools/check_parity.py` verifies Kotlin-made backups/PKCS12 with Python + keytool.
+- PKCS12 generated with BC "PKCS12-AES256-AES128"; JKS import via own reader of the documented Sun format.
+- CI job `android`: core/apk/app unit tests, assembleDebug, emulator smoke test, upload APK artifact.

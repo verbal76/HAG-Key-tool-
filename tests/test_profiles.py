@@ -121,6 +121,9 @@ def test_migrates_v0_profile_and_keeps_original(store, paths):
     assert p.android_identity_id == "e" * 32
     assert json.loads(path.read_text())["schema_version"] == SCHEMA_VERSION
     assert json.loads((paths.profiles_dir / f"{pid}.v0.bak.json").read_text()) == v0
+    # The backup copy is not listed as a second project and is never rewritten.
+    assert [x.id for x in store.list()] == [pid]
+    assert json.loads((paths.profiles_dir / f"{pid}.v0.bak.json").read_text()) == v0
 
 
 def test_newer_schema_refused_without_modification(store, paths):

@@ -86,6 +86,8 @@ class ProfileStore:
             return []
         good, broken = [], []
         for path in sorted(self.dir.glob("*.json")):
+            if ".bak." in path.name:
+                continue  # pre-migration copies, kept for recovery only
             try:
                 good.append(self._read(path))
             except ProfileError as exc:
