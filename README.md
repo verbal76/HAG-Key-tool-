@@ -1,43 +1,61 @@
-# HAG-Key-tool-
-Key generator
+# Hot Attic Games Build & Signing Manager
 
-A small command-line tool for generating cryptographically secure random keys
-(API keys, secrets, tokens, readable grouped codes). It uses Python's
-`secrets` module and has no third-party dependencies.
+A Windows desktop application for setting up how each of your apps is built and signed,
+without writing build scripts by hand.
 
-## Usage
+For every project you record the name, identifiers, version, platforms, stores and release
+channel. The app then:
 
-Requires Python 3.8+.
+- **manages Android signing identities**: it generates, imports, inspects, backs up and restores keystores
+  using the official `keytool` and `apksigner` tools;
+- **prepares the GitHub Actions secrets** (names and values) that a CI workflow needs to sign releases;
+- **writes a complete, engine-independent Claude prompt** that tells a Claude Code session how
+  to configure the build workflow in the game's own repository.
+
+It is a configuration and signing utility. It does not build games, submit to stores or publish releases.
+
+> **Status:** private test build (v1.0.0). Not for public distribution.
+
+## Download
+
+Every pull request and every push to `main` runs the **Windows build** GitHub Actions workflow. Open
+the workflow run and download the `HotAtticBuildSigningManager-windows-<commit>` artifact. It contains
+`HotAtticBuildSigningManager.exe`, a single file that you open by double-clicking. You don't need
+to install Python or anything else.
+
+For Android signing you need a Java JDK (`keytool`). Android Studio includes one. For full APK
+verification you also need the Android SDK build-tools (`apksigner`). The app finds both automatically,
+or you can set their locations in **Settings**.
+
+## Documentation
+
+- [User guide](docs/USER_GUIDE.md): day-to-day use, backups and recovery
+- [Security](docs/SECURITY.md): how credentials are stored and protected, and the limitations
+- [Release notes](RELEASE_NOTES.md)
+
+## Development
 
 ```sh
-python -m hag_keytool                      # 64-char hex key (32 bytes)
-python -m hag_keytool -f base64            # URL-safe base64, no padding
-python -m hag_keytool -f alnum -l 40       # 40 letters/digits
-python -m hag_keytool -f grouped           # e.g. 7KQ4M-ZP2XH-...
-python -m hag_keytool -f hex -p sk_ -n 5   # five keys prefixed with sk_
+python -m pip install -r requirements.txt
+python -m pytest                      # tests (signing tests use the real keytool/apksigner if installed)
+PYTHONPATH=src python -m hag_bsm      # run from source
+python packaging/make_icon.py         # regenerate assets/app.ico
+pyinstaller --noconfirm --clean packaging/hag_bsm.spec   # build dist/HotAtticBuildSigningManager.exe
 ```
 
-| Option | Description |
+Source layout:
+
+| Path | Contents |
 | --- | --- |
-| `-f, --format` | `hex`, `base64`, `alnum`, or `grouped` (default `hex`) |
-| `-l, --length` | Bytes for hex/base64 (default 32); characters for alnum (default 32) or grouped (default 25) |
-| `-n, --count` | Number of keys (default 1) |
-| `-g, --group-size` | Characters per group for `grouped` (default 5) |
-| `-s, --separator` | Group separator for `grouped` (default `-`) |
-| `-p, --prefix` | String prepended to each key |
+| `src/hag_bsm/` | Core logic (no Qt): profiles, validation, vault, Android signing, backups, prompt generator |
+| `src/hag_bsm/ui/` | PySide6 interface |
+| `tests/` | Automated tests |
+| `packaging/` | PyInstaller spec, icon generator |
+| `tools/decrypt_backup.py` | Stand-alone backup decryptor (recovery without the app) |
+| `.github/workflows/` | Windows CI build |
 
-The `grouped` format uses uppercase letters and digits without look-alike
-characters (no `0`, `O`, `1`, `I`, `L`), so codes are easy to read aloud or type.
+`hag_keytool/` is an earlier, unrelated command-line key generator. The application above supersedes it.
 
-## As a library
+## License
 
-```python
-from hag_keytool import generate_key
-generate_key("grouped", 20, group_size=4)
-```
-
-## Tests
-
-```sh
-python -m unittest discover -s tests
-```
+Proprietary. Copyright © Hot Attic Games. All rights reserved. See [LICENSE](LICENSE).

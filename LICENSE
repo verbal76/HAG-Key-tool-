@@ -1,0 +1,10 @@
+Copyright (c) Hot Attic Games. All rights reserved.
+
+This software and its source code are proprietary and confidential. No part of it may be
+copied, modified, distributed, or used except as expressly authorized in writing by
+Hot Attic Games.
+
+Third-party components bundled in the Windows build are used under their own licenses:
+- Qt for Python (PySide6) — LGPLv3
+- cryptography — Apache License 2.0 / BSD
+- Python — PSF License
