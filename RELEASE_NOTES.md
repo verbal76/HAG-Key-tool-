@@ -16,4 +16,11 @@ First version for owner testing.
 - Engine-independent Claude build-configuration prompt that never contains secrets.
 - Windows executable built and smoke-tested in CI.
 
+### Android app (1.0.0, debug-signed private test build)
+
+- Same features as the Windows app, in a Jetpack Compose interface.
+- On-device key generation (BouncyCastle) and APK verification (apksig). Imports JKS and PKCS12 keystores.
+- Passwords are protected by the Android Keystore. Backups, profiles and prompts are interchangeable with the
+  Windows app, and CI checks this on every build.
+
 Known limitations: see [docs/SECURITY.md](docs/SECURITY.md#limitations).

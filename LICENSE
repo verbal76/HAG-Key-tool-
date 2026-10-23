@@ -8,3 +8,8 @@ Third-party components bundled in the Windows build are used under their own lic
 - Qt for Python (PySide6) — LGPLv3
 - cryptography — Apache License 2.0 / BSD
 - Python — PSF License
+
+Third-party components bundled in the Android build:
+- Bouncy Castle (bcprov, bcpkix) — MIT-style Bouncy Castle License
+- apksig (Android Open Source Project) — Apache License 2.0
+- AndroidX / Jetpack Compose, Kotlin and kotlinx libraries — Apache License 2.0

@@ -176,3 +176,28 @@ If there are errors (for example a missing package name), the page lists them in
   `apksigner.bat` / `apksigner.jar`.
 - **Clipboard:** how long copied secrets stay on the clipboard.
 - **Data folders:** where projects, the vault and logs are stored, each with an **Open** button.
+
+## Android app
+
+The Android app has the same screens and features as the Windows app. Open the menu (☰) to move between them.
+
+- **No extra tools needed.** Keys are generated on the phone (RSA 4096-bit, PKCS12) and APKs are checked with
+  apksig, Google's library behind `apksigner`. Existing `.jks`, `.keystore` and `.p12` files can be imported.
+  JCEKS keystores must first be converted to PKCS12 with `keytool -importkeystore`.
+- **Files** (keystores, APKs, backups, profiles, the prompt) are opened and saved through Android's file
+  picker, so you can use phone storage, a USB drive or a cloud drive. Backups are never written over an
+  existing file.
+- **Passwords** are protected with a key held in the Android Keystore. They can only be read by this app on
+  this phone. App data is excluded from Android cloud backup and device transfer, so **encrypted backups are
+  the way to move or recover identities.** A backup made on the phone can be restored in the Windows app, and
+  the reverse.
+- **Export Keystore File** saves the keystore itself (without its passwords), for example to use it on a
+  build machine.
+- **Screenshots are blocked** inside the app because it shows passwords.
+- **Share** on the Generated Prompt screen sends the prompt to another app, for example the Claude app.
+
+**Installing test builds:** the APK is debug-signed (by owner decision) for private testing. Each CI build
+may use a different debug key, so you might have to uninstall the previous test build before installing a
+newer one. Uninstalling deletes the app's projects and vault, so **back up your signing identities and export
+your profiles before uninstalling.** A release-signed build will be needed before updates can install over
+each other.

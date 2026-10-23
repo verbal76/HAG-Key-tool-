@@ -1,7 +1,7 @@
 # Hot Attic Games Build & Signing Manager
 
-A Windows desktop application for setting up how each of your apps is built and signed,
-without writing build scripts by hand.
+A Windows desktop application, with an Android companion that has the same features, for setting up how
+each of your apps is built and signed, without writing build scripts by hand.
 
 For every project you record the name, identifiers, version, platforms, stores and release
 channel. The app then:
@@ -23,7 +23,12 @@ the workflow run and download the `HotAtticBuildSigningManager-windows-<commit>`
 `HotAtticBuildSigningManager.exe`, a single file that you open by double-clicking. You don't need
 to install Python or anything else.
 
-For Android signing you need a Java JDK (`keytool`). Android Studio includes one. For full APK
+**Android:** the **Android build** workflow produces `HotAtticBuildSigningManager-1.0.0-debug.apk`
+(artifact `HotAtticBuildSigningManager-android-debug-<commit>`). To install it, allow "Install unknown apps"
+for your browser or file manager and open the APK. It is debug-signed for private testing (see
+[Android notes](docs/USER_GUIDE.md#android-app)). The Android app needs no extra tools.
+
+For Android signing on Windows you need a Java JDK (`keytool`). Android Studio includes one. For full APK
 verification you also need the Android SDK build-tools (`apksigner`). The app finds both automatically,
 or you can set their locations in **Settings**.
 
@@ -41,6 +46,9 @@ python -m pytest                      # tests (signing tests use the real keytoo
 PYTHONPATH=src python -m hag_bsm      # run from source
 python packaging/make_icon.py         # regenerate assets/app.ico
 pyinstaller --noconfirm --clean packaging/hag_bsm.spec   # build dist/HotAtticBuildSigningManager.exe
+
+cd android && ./gradlew :app:assembleDebug   # Android APK (needs the Android SDK)
+HAGBSM_CORE_ONLY=1 ./gradlew :core:test       # shared Kotlin core only (no Android SDK needed)
 ```
 
 Source layout:
@@ -52,7 +60,9 @@ Source layout:
 | `tests/` | Automated tests |
 | `packaging/` | PyInstaller spec, icon generator |
 | `tools/decrypt_backup.py` | Stand-alone backup decryptor (recovery without the app) |
-| `.github/workflows/` | Windows CI build |
+| `android/` | Android app: `core` (shared Kotlin logic, formats identical to the Windows app), `apk` (APK verification with apksig), `app` (Jetpack Compose UI) |
+| `tools/parity_fixtures.py`, `tools/check_parity.py` | Cross-checks that the Android and Windows apps produce identical prompts and compatible files |
+| `.github/workflows/` | Windows and Android CI builds |
 
 `hag_keytool/` is an earlier, unrelated command-line key generator. The application above supersedes it.
 
