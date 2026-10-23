@@ -144,7 +144,7 @@ class AppUiTest {
         assertEquals(1, state.vault.list().size)
 
         nav("SECRETS")
-        compose.onNodeWithTag("suffix_true").performClick()
+        tap("suffix_true")
         compose.onNodeWithTag("suffix_value").performTextClearance()
         compose.onNodeWithTag("suffix_value").performTextInput("2")
         assertEquals(2L, state.profile!!.secretSuffix)
