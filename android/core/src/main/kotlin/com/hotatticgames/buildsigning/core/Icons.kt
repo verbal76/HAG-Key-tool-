@@ -23,7 +23,13 @@ fun interface IconReader {
 
 val FileIconReader = IconReader { ref ->
     val f = File(ref)
-    if (!f.isFile) null else f.inputStream().use { it.readNBytes(64) }
+    // Not InputStream.readNBytes: it does not exist on Android before API 33.
+    if (!f.isFile) null else f.inputStream().use { input ->
+        val buf = ByteArray(64)
+        var off = 0
+        while (off < buf.size) { val n = input.read(buf, off, buf.size - off); if (n < 0) break; off += n }
+        buf.copyOf(off)
+    }
 }
 
 fun inspectIcon(reference: String, reader: IconReader = FileIconReader): IconInfo {

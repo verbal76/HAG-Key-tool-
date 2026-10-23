@@ -2,8 +2,10 @@ name: Windows build
 
 on:
   pull_request:
+    paths-ignore: ["android/**", ".github/workflows/android-build.yml"]
   push:
     branches: [main]
+    paths-ignore: ["android/**", ".github/workflows/android-build.yml"]
   workflow_dispatch:
 
 concurrency:
