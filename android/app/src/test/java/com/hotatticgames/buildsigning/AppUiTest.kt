@@ -3,6 +3,8 @@ package com.hotatticgames.buildsigning
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -55,6 +57,14 @@ class AppUiTest {
         compose.waitForIdle()
     }
 
+    /** Re-throws assertion failures with the semantics tree, so CI logs show what was on screen. */
+    private fun <T> ui(block: () -> T): T = try { block() } catch (e: AssertionError) {
+        throw AssertionError(e.message + "\n--- UI tree ---\n" +
+            compose.onAllNodes(androidx.compose.ui.test.isRoot(), useUnmergedTree = true).fetchSemanticsNodes()
+                .joinToString("\n") { it.config.toString() + " children=" + it.children.size } +
+            "\n" + runCatching { compose.onRoot(useUnmergedTree = true).printToString(maxDepth = 12) }.getOrDefault(""), e)
+    }
+
     @Test fun createEditSaveAndReopen() {
         val state = newState()
         show(state)
@@ -68,7 +78,7 @@ class AppUiTest {
         compose.onNodeWithTag("field_version").performTextInput("2.1.0")
         assertTrue(state.dirty)
         nav("PLATFORMS")
-        compose.onNodeWithTag("platform_android").performScrollTo().performClick()
+        ui { compose.onNodeWithTag("platform_android").performScrollTo().performClick() }
         compose.onNodeWithTag("store_google_play").performScrollTo().performClick()
         compose.onNodeWithTag("save").performClick()
         assertFalse(state.dirty)
@@ -91,7 +101,7 @@ class AppUiTest {
         state.edit { it.platforms.getValue("windows").enabled = true; it.stores.add("private") }
         nav("SECRETS")
         nav("PROMPT")
-        compose.onNodeWithTag("prompt_text").assertIsDisplayed()
+        ui { compose.onNodeWithTag("prompt_text").assertIsDisplayed() }
         compose.onNodeWithText("Application:      Prompt Game", substring = true).assertExists()
         compose.onNodeWithText("Copy Prompt").performClick()
         assertTrue(state.clipboard.text()!!.contains("PROJECT BUILD CONFIGURATION"))
@@ -105,9 +115,7 @@ class AppUiTest {
         state.save()
         show(state)
         nav("SIGNING")
-        compose.onNodeWithTag("Generate New Android Signing Identity").performScrollTo().performClick()
-        compose.onNodeWithTag("gen_confirm_button").performClick()
-        compose.waitForIdle()
+        ui { compose.onNodeWithTag("Generate New Android Signing Identity").performScrollTo().performClick(); compose.onNodeWithTag("gen_confirm_button").performClick(); compose.waitForIdle() }
         val rec = state.identity()
         assertNotNull(rec)
         assertEquals(rec!!.id, state.store.load(state.profile!!.id).androidIdentityId)   // link saved immediately
@@ -147,7 +155,7 @@ class AppUiTest {
         state.linkIdentity(rec.id)
         show(state)
         nav("PROJECTS")
-        compose.onNodeWithTag("menu_Delete Me").performClick()
+        ui { compose.onNodeWithTag("menu_Delete Me").performClick() }
         compose.onNodeWithTag("delete_Delete Me").performClick()
         compose.onNodeWithText("will NOT be deleted", substring = true).assertExists()
         compose.onNodeWithTag("confirm_delete").performClick()
