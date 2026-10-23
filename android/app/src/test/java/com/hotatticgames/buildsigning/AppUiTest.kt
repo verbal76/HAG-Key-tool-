@@ -63,6 +63,12 @@ class AppUiTest {
         compose.waitForIdle()
     }
 
+    /** Scroll to a control and trigger its click action (a transient snackbar may cover it on screen). */
+    private fun tap(tag: String) {
+        compose.onNodeWithTag(tag).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+    }
+
     /** Re-throws assertion failures with the semantics tree, so CI logs show what was on screen. */
     private fun <T> ui(block: () -> T): T = try { block() } catch (e: AssertionError) {
         throw AssertionError(e.message + "\n--- UI tree ---\n" +
@@ -84,8 +90,8 @@ class AppUiTest {
         compose.onNodeWithTag("field_version").performTextInput("2.1.0")
         assertTrue(state.dirty)
         nav("PLATFORMS")
-        ui { compose.onNodeWithTag("platform_android").performScrollTo().performClick() }
-        compose.onNodeWithTag("store_google_play").performScrollTo().performClick()
+        ui { tap("platform_android") }
+        tap("store_google_play")
         compose.onNodeWithTag("save").performClick()
         assertFalse(state.dirty)
 
@@ -121,7 +127,7 @@ class AppUiTest {
         state.save()
         show(state)
         nav("SIGNING")
-        ui { compose.onNodeWithTag("Generate New Android Signing Identity").performScrollTo().performClick(); compose.onNodeWithTag("gen_confirm_button").performClick(); compose.waitForIdle() }
+        ui { tap("Generate New Android Signing Identity"); compose.onNodeWithTag("gen_confirm_button").performClick(); compose.waitForIdle() }
         val rec = state.identity()
         assertNotNull(rec)
         assertEquals(rec!!.id, state.store.load(state.profile!!.id).androidIdentityId)   // link saved immediately
@@ -130,7 +136,7 @@ class AppUiTest {
         compose.onNodeWithText("but not backed up", substring = true).assertExists()
 
         // Replacing requires typing REPLACE; the old identity is kept.
-        compose.onNodeWithTag("Generate New Android Signing Identity").performScrollTo().performClick()
+        tap("Generate New Android Signing Identity")
         compose.onNodeWithTag("gen_confirm_button").performClick()
         compose.onNodeWithText("or press Cancel", substring = true).assertExists()
         compose.onNodeWithText("Cancel").performClick()
@@ -142,11 +148,11 @@ class AppUiTest {
         compose.onNodeWithTag("suffix_value").performTextClearance()
         compose.onNodeWithTag("suffix_value").performTextInput("2")
         assertEquals(2L, state.profile!!.secretSuffix)
-        compose.onNodeWithTag("copy_all_names").performScrollTo().performClick()
+        tap("copy_all_names")
         assertEquals("ANDROID_RELEASE_KEYSTORE_BASE64_2\nANDROID_RELEASE_KEYSTORE_PASSWORD_2\nANDROID_RELEASE_KEY_ALIAS_2\nANDROID_RELEASE_KEY_PASSWORD_2",
             state.clipboard.text())
         val creds = state.vault.credentials(rec.id)
-        compose.onNodeWithTag("copy_secret_keystore_password").performScrollTo().performClick()
+        tap("copy_secret_keystore_password")
         assertEquals(creds.storePassword, state.clipboard.text())
 
         nav("PROMPT")

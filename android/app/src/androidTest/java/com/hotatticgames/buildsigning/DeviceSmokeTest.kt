@@ -1,6 +1,7 @@
 package com.hotatticgames.buildsigning
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -25,7 +26,13 @@ import org.junit.runner.RunWith
 class DeviceSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    /** Snackbars sit over the bottom of the screen for a few seconds; wait so real taps reach the content. */
+    private fun waitForSnackbar() {
+        compose.waitUntil(15_000) { compose.onAllNodes(hasContentDescription("Dismiss")).fetchSemanticsNodes().isEmpty() }
+    }
+
     private fun nav(tag: String) {
+        waitForSnackbar()
         compose.onNodeWithTag("menu").performClick()
         compose.onNodeWithTag("nav_$tag").performClick()
         compose.waitForIdle()
@@ -41,12 +48,14 @@ class DeviceSmokeTest {
 
         nav("PLATFORMS")
         compose.onNodeWithTag("platform_android").performScrollTo().performClick()
+        waitForSnackbar()
         compose.onNodeWithTag("store_private").performScrollTo().performClick()
         nav("DETAILS")
         compose.onNodeWithTag("field_android_package").performScrollTo().performTextInput("com.hotatticgames.devicegame")
         compose.onNodeWithTag("save").performClick()
 
         nav("SIGNING")
+        waitForSnackbar()
         compose.onNodeWithTag("Generate New Android Signing Identity").performScrollTo().performClick()
         compose.onNodeWithTag("gen_confirm_button").performClick()
         compose.waitUntil(timeoutMillis = 180_000) {
