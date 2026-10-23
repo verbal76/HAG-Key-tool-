@@ -1,6 +1,8 @@
 package com.hotatticgames.buildsigning
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -51,9 +53,13 @@ class AppUiTest {
 
     private fun show(state: AppState) = compose.setContent { AppTheme { App(state) } }
 
+    /**
+     * Robolectric does not run the drawer's open animation (the sheet stays off-screen), so the menu
+     * item's click action is invoked directly. The emulator test (DeviceSmokeTest) uses real taps.
+     */
     private fun nav(tag: String) {
         compose.onNodeWithTag("menu").performClick()
-        compose.onNodeWithTag("nav_$tag").performClick()
+        compose.onNodeWithTag("nav_$tag").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
     }
 
