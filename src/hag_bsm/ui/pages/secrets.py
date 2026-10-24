@@ -9,6 +9,7 @@ from .. import clipboard
 from ..dialogs import WorkflowDialog
 from ..widgets import Card, CopyField, SecretField, StatusBadge, button, flash, muted_label
 from .base import Page
+from .play_apple import PlatformSecretsCard
 
 INSTRUCTIONS = """How to add these secrets to GitHub:
 1. Open the repository on github.com and go to Settings → Secrets and variables → Actions.
@@ -119,6 +120,9 @@ class SecretsPage(Page):
         values_card.add(vgrid)
         self.content.addWidget(values_card)
 
+        self.platform_card = PlatformSecretsCard(ctx)
+        self.content.addWidget(self.platform_card)
+
         help_card = Card("3. Add them to GitHub")
         help_card.add(muted_label(INSTRUCTIONS))
         self.content.addWidget(help_card)
@@ -130,6 +134,7 @@ class SecretsPage(Page):
         ctx.profileLoaded.connect(self.refresh)
         ctx.identitiesChanged.connect(self.refresh)
         ctx.profileEdited.connect(self._update_android_flag)
+        ctx.profileEdited.connect(self.platform_card.refresh)
 
     # --- editing ---------------------------------------------------------------------------------
     def _mode_changed(self, *_):
@@ -221,6 +226,7 @@ class SecretsPage(Page):
             providers = {r: None for r in ROLES}
         for role, sf in self.value_fields.items():
             sf.set_provider(providers[role])
+        self.platform_card.refresh()
 
     def _wf_summary(self) -> str:
         v = self.ctx.profile.v11

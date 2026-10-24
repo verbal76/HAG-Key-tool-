@@ -102,6 +102,14 @@ marked **verified** only if all of this succeeds. **Test Backup Recovery** repea
   signing material into profiles, and restores the previous state if a step fails.
 - Changing platforms, identifiers, secret names or the workflow decision never regenerates, replaces or deletes a signing identity.
 
+## Google Play and Apple data (unreleased additions)
+
+- Upload keys live in the vault exactly like other identities (DPAPI-protected credentials, encrypted backups). Exporting the upload certificate writes only the public certificate, to a new file.
+- Google's app-signing certificate and all Apple data are stored as public metadata in the profile. Entries typed or imported by the owner are labelled as such; nothing is verified against Google or Apple.
+- Apple P12 files are opened in memory with a typed password to read public details. The private key and the password are not stored, logged or put in prompts; Python cannot guarantee that memory is wiped.
+- Apple certificate/profile trust chains and signatures are NOT validated, and the app cannot prove a paid developer account or distribution rights.
+- Exported profiles include this public metadata but never keys, passwords or P12 files.
+
 ## Limitations
 
 - The vault protection relies on the Windows user account. Anyone signed in as you, or malware running as
@@ -117,3 +125,10 @@ marked **verified** only if all of this succeeds. **Test Backup Recovery** repea
 - The Android app is still version 1.0 and cannot open profiles that use version 1.1 features.
 - The app does not connect to GitHub, so it cannot check whether secret names already exist.
 - Without `apksigner`, APK checks can only read v1 (JAR) signature certificates and report them as unverified.
+
+### Residual risks (reviewed for the Google Play / Apple expansion)
+- DPAPI protects credentials only from other Windows users. Malware running as you can read them. A copy of the vault on another PC or account cannot be decrypted: restore from an encrypted backup there.
+- Recovery depends on the backup passphrase; there is no escrow. Lose both the vault and the passphrase and the key is gone (for an upload key, Google offers a reset; for a direct key, installs can never update).
+- Passwords briefly exist as ordinary Python strings and in child-process environments (keytool); redaction of logs is a second line of defence, not a guarantee.
+- Windows Authenticode and Apple signing credentials are not stored by the manager; the manager records metadata only.
+- Not independently audited. Passing automated tests is not evidence of commercial-grade security.

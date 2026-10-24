@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
@@ -14,6 +14,8 @@ from .requirements import RequirementsCard
 from ..widgets import Card, CopyField, SecretField, StatusBadge, button, muted_label
 from ..workers import run_task
 from .base import Page
+from .play_apple import AppleCard, PlaySigningCard
+from ... import playsigning
 
 
 def _date(iso: str) -> str:
@@ -41,6 +43,13 @@ def identity_status(ctx, rec):
         base = "Signing identity restored from backup"
     else:
         base = "Existing signing identity imported"
+    try:
+        end = datetime.fromisoformat(rec.not_after)
+        if (end if end.tzinfo else end.replace(tzinfo=timezone.utc)) < datetime.now(timezone.utc):
+            return (f"{base}, but its certificate EXPIRED on {_date(rec.not_after)}. "
+                    "Do not replace the key without understanding the update consequences."), "error"
+    except (ValueError, TypeError):
+        pass
     if rec.has_verified_backup:
         return f"{base} and backed up (recovery verified).", "success"
     if rec.has_any_backup:
@@ -59,7 +68,8 @@ class SigningPage(Page):
         self.content.addWidget(self.tools_badge)
 
         # --- Android identity ---
-        self.android_card = Card("Android signing identity")
+        self.android_card = Card("Android direct APK signing",
+                                 "The key that signs APKs you install directly on devices or distribute outside Google Play. Updates must always use the same key.")
         self.not_selected = muted_label("Android is not selected for this project, so Android signing is optional.")
         self.android_card.add(self.not_selected)
         self.status = StatusBadge()
@@ -134,6 +144,10 @@ class SigningPage(Page):
 
         self.content.addWidget(self.android_card)
         self.content.addWidget(self.apk_card)
+        self.play = PlaySigningCard(ctx, self)
+        self.content.addWidget(self.play)
+        self.apple = AppleCard(ctx, self)
+        self.content.addWidget(self.apple)
         self.req_card = RequirementsCard(ctx)
         self.content.addWidget(self.req_card)
 
@@ -225,6 +239,9 @@ class SigningPage(Page):
             if insp.schemes:
                 lines.append("Signature schemes: " + ", ".join(
                     f"{k} {'yes' if v else ('unknown' if v is None else 'no')}" for k, v in insp.schemes.items()))
+            roles = playsigning.classify_signer(insp.signer_sha256, rec, self.ctx.upload_identity(), self.ctx.profile)
+            if insp.signer_sha256:
+                lines.append("Signer matches: " + ("; ".join(roles) if roles else "none of the certificates recorded for this project"))
             lines += [f"• {n}" for n in comparison.notes]
             self.apk_details.setText("\n".join(lines))
             self.apk_card.show()
@@ -233,6 +250,8 @@ class SigningPage(Page):
             self.apk_card.hide()
         self._refresh_platforms()
         self.req_card.refresh()
+        self.play.refresh()
+        self.apple.refresh()
         self._update_buttons()
 
     def _refresh_platforms(self):
@@ -245,6 +264,8 @@ class SigningPage(Page):
         self.other_text.setText("\n\n".join(f"{PLATFORM_BY_KEY[k].label}: {GUIDANCE[k]}" for k in others))
 
     def _update_buttons(self):
+        if self.ctx.profile:
+            self.play.update_buttons()
         rec = self.ctx.identity() if self.ctx.profile else None
         busy = self.ctx.busy
         kt = self.ctx.tools.has_keytool
@@ -353,8 +374,8 @@ class SigningPage(Page):
         if dlg.exec() == LinkIdentityDialog.Accepted:
             self._link(dlg.selected_id())
 
-    def create_backup(self):
-        rec = self.ctx.identity()
+    def create_backup(self, rec=None):
+        rec = rec or self.ctx.identity()
         if not rec:
             return
         dlg = BackupDialog(rec, self)
@@ -380,8 +401,8 @@ class SigningPage(Page):
                   lambda: backup.create_backup(vault, rec.id, v["path"], v["passphrase"], tools),
                   done, "Backup failed")
 
-    def test_recovery(self):
-        rec = self.ctx.identity()
+    def test_recovery(self, rec=None):
+        rec = rec or self.ctx.identity()
         if not rec:
             return
         default = rec.backups[-1]["path"] if rec.backups else ""
@@ -405,7 +426,7 @@ class SigningPage(Page):
                   lambda: backup.verify_backup(v["path"], v["passphrase"], tools, rec.fingerprint_sha256),
                   done, "Recovery test failed")
 
-    def restore(self):
+    def restore(self, link=None):
         dlg = BackupFileDialog("Restore From Backup",
                                "Restores a signing identity into this computer's vault from an encrypted backup. "
                                "Existing identities are never replaced.", "Restore", parent=self)
@@ -422,7 +443,7 @@ class SigningPage(Page):
             if QMessageBox.question(self, "Restore complete",
                                     f"{msg}\n\n“{rec.label}”\nSHA-256 {rec.fingerprint_sha256}\n\n"
                                     "Link it to the open project?") == QMessageBox.Yes:
-                self._link(rec.id)
+                (link or self._link)(rec.id)
 
         self._run("Restoring from backup…",
                   lambda: backup.restore_backup(vault, v["path"], v["passphrase"], tools, name),

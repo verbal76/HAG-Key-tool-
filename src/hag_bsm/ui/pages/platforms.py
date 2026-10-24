@@ -7,6 +7,13 @@ from ..widgets import Card, muted_label
 from .base import field_message_label, set_field_message
 
 
+STORE_HINTS = {
+    "google_play": "Distribution through Google Play: an AAB signed with an upload key. Direct APK installs are a separate distribution.",
+    "app_store": "Apple App Store distribution: needs an Apple Developer account, a distribution certificate and a provisioning profile.",
+    "private": "Direct distribution (for example a signed APK installed on test devices) without a store.",
+}
+
+
 class PlatformsSection(QWidget):
     """The Platforms & Stores section, shown at the bottom of the Application Details page."""
 
@@ -64,6 +71,7 @@ class PlatformsSection(QWidget):
         self.store_boxes = {}
         for key, label in STORES:
             cb = QCheckBox(label)
+            cb.setToolTip(STORE_HINTS.get(key, ""))
             cb.toggled.connect(lambda _: self._stores_changed())
             self.store_boxes[key] = cb
             row.addWidget(cb)

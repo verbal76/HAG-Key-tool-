@@ -42,3 +42,9 @@ First version for owner testing.
   Windows app, and CI checks this on every build.
 
 Known limitations: see [docs/SECURITY.md](docs/SECURITY.md#limitations).
+
+## Unreleased (development branch): Google Play and Apple support
+- Google Play upload-key management (generate, import, share with the direct key, PEM export, backup/recovery), owner-reported Google app-signing certificate tracking, Play configuration checks.
+- Apple Team ID, certificate and provisioning-profile metadata, relationship checks, optional development bundle identifier.
+- Platform-specific GitHub secret name suggestions and prompt sections; APK inspection reports which known certificate signed an APK.
+- Profiles gain optional fields in the existing `v11` object (schema 2 only when used). The Android app is unchanged (v1.0).

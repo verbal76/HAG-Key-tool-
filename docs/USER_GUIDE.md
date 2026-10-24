@@ -246,3 +246,32 @@ your list (older formats, other folders). You can **Import All**, **Import Selec
 backup copy goes to the `migration_backups` folder next to your projects; the original file is never changed or deleted, and a failed
 import is rolled back. Skipped files are not offered again unless they change or you scan again. Nothing is uploaded anywhere.
 Projects you created with version 1.0 already appear in the list and are read as they are.
+
+## Google Play, upload keys and Apple (Windows app)
+
+### Three different Android certificates
+- **Direct APK signing key**: signs APKs you install yourself or distribute outside Google Play (Signing Identities → *Android direct APK signing*).
+- **Google Play upload key**: signs the app bundle (AAB) you upload to Google Play. It can be the same key as the direct one or, safer, a separate key.
+- **Google Play app-signing certificate**: held by Google; it signs the APKs users download. You can only record its public fingerprints.
+
+Tick **Google Play** under Platforms & Stores and the *Google Play upload signing* and *app-signing certificate* groups appear on Signing Identities.
+
+### Upload key
+**Generate Upload Key**, **Import Upload Keystore…**, **Use Direct APK Key as Upload Key**, or **Use Identity From Vault…**. If the vault already holds an upload key the app offers to link it instead
+of creating another; replacing a linked upload key needs typing `REPLACE`, and nothing is ever deleted. **Export Certificate (PEM)…** saves the *public* certificate for Play Console (existing files are never
+overwritten). SHA-1 and SHA-256 can be copied. Backup, recovery test and restore work as for the direct key.
+
+### Google's app-signing certificate
+Paste the SHA-256/SHA-1 from Play Console → App integrity, or import its public certificate to have the fingerprints calculated. Entries are labelled *entered by the owner*; the app cannot verify Play Console,
+enrollment, or Google's key. The configuration check lists what is missing and flags an upload fingerprint that does not match the local key.
+
+### Direct APKs versus Play installs
+With Play App Signing, Play-delivered installs carry Google's certificate. A direct APK signed with your own key cannot update such an install, and the reverse. *Inspect APK Certificate* now tells you which of your recorded certificates (direct, upload, Play app-signing) signed an APK.
+
+### Apple (metadata only)
+With iOS or macOS selected, Signing Identities shows *Apple signing identities and provisioning*: Team ID, **Add Certificate…** (.cer/.pem or a .p12 with its password), and **Add Provisioning Profile…**. Only public details are kept
+(names, Team ID, expiry, SHA-256, App ID, capability names). A P12's private key is never stored. The checks compare Team ID, bundle identifier, expiry and development/distribution kind. Xcode builds, code signing and notarization need macOS; the generated prompt tells the agent to use a macOS runner.
+An optional *Apple development bundle identifier* is on Project & Identifiers.
+
+### GitHub Secrets
+The four Android names are unchanged. A separate upload key uses `PLAY_UPLOAD_KEYSTORE_BASE64`, `PLAY_UPLOAD_KEYSTORE_PASSWORD`, `PLAY_UPLOAD_KEY_ALIAS`, `PLAY_UPLOAD_KEY_PASSWORD`. Apple names are suggestions only. Fingerprints and the Team ID are public and belong in repository *variables*, not secrets.

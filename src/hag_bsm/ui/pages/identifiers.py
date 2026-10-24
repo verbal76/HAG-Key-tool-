@@ -91,9 +91,14 @@ class IdentifiersPage(Page):
         self.desktop_id = QLineEdit()
         self.desktop_id.setPlaceholderText("Optional, e.g. com.hotatticgames.mygame")
         self.desktop_id.setToolTip("Optional identifier for Windows/Linux packaging (e.g. installer AppId).")
+        self.apple_dev_id = QLineEdit()
+        self.apple_dev_id.setPlaceholderText("Optional, e.g. com.hotatticgames.mygame.dev")
+        self.apple_dev_id.setToolTip("Optional separate Apple bundle identifier for development builds. It is a different application "
+                                     "from the production identifier.")
         self.id_rows = {}
         for label, widget, fld in (("Android package name", self.android_pkg, "android_package"),
                                    ("Apple bundle identifier", self.apple_id, "apple_bundle_id"),
+                                   ("Apple development bundle identifier", self.apple_dev_id, "apple_dev_bundle_id"),
                                    ("macOS bundle identifier", self.macos_id, "macos_bundle_id"),
                                    ("Desktop identifier", self.desktop_id, "desktop_app_id")):
             box, self.msgs[fld] = _with_message(widget)
@@ -108,7 +113,8 @@ class IdentifiersPage(Page):
         self.finish()
 
         for w, attr in ((self.android_pkg, "android_package"), (self.apple_id, "apple_bundle_id"),
-                        (self.macos_id, "macos_bundle_id"), (self.desktop_id, "desktop_app_id")):
+                        (self.macos_id, "macos_bundle_id"), (self.desktop_id, "desktop_app_id"),
+                        (self.apple_dev_id, "apple_dev_bundle_id")):
             w.textChanged.connect(lambda text, a=attr: self._set(a, text))
         self.dev.toggled.connect(self._dev_toggled)
         self.dev_id.textChanged.connect(self._dev_id_changed)
@@ -125,8 +131,9 @@ class IdentifiersPage(Page):
         if self._updating or not self.ctx.profile:
             return
         value = value.strip()
-        if getattr(self.ctx.profile, attr) != value:
-            setattr(self.ctx.profile, attr, value)
+        target = self.ctx.profile.v11 if attr == "apple_dev_bundle_id" else self.ctx.profile
+        if getattr(target, attr) != value:
+            setattr(target, attr, value)
             self.ctx.mark_dirty()
 
     def _dev_toggled(self, on):
@@ -217,6 +224,7 @@ class IdentifiersPage(Page):
             self.apple_id.setText(p.apple_bundle_id)
             self.macos_id.setText(p.macos_bundle_id)
             self.desktop_id.setText(p.desktop_app_id)
+            self.apple_dev_id.setText(v.apple_dev_bundle_id)
         finally:
             self._updating = False
         self.inspect_btn.setEnabled(bool(v.project_dir))
@@ -244,6 +252,7 @@ class IdentifiersPage(Page):
         visible = {
             "android_package": "android" in plats,
             "apple_bundle_id": bool(plats & {"ios", "macos"}),
+            "apple_dev_bundle_id": bool(plats & {"ios", "macos"}),
             "macos_bundle_id": "macos" in plats,
             "desktop_app_id": bool(plats & {"windows", "linux"}),
         }
