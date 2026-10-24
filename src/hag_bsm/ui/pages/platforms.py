@@ -1,19 +1,33 @@
-from PySide6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ...guidance import GUIDANCE
 from ...model import PLATFORMS, STORES
 from ...validation import validate_profile
 from ..widgets import Card, muted_label
-from .base import field_message_label, Page, set_field_message
+from .base import field_message_label, set_field_message
 
 
-class PlatformsPage(Page):
+class PlatformsSection(QWidget):
+    """The Platforms & Stores section, shown at the bottom of the Application Details page."""
+
     title = "Platforms & Stores"
     subtitle = ("Choose what this project should be built for. Selecting a platform records what you want; "
                 "the generated prompt asks the development agent to check what the project can actually build.")
 
     def __init__(self, ctx, parent=None):
-        super().__init__(ctx, parent)
+        super().__init__(parent)
+        self.ctx = ctx
+        self._updating = False
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(16)
+        heading = QLabel(self.title)
+        heading.setStyleSheet("font-size: 14pt; font-weight: 700;")
+        root.addWidget(heading)
+        sub = QLabel(self.subtitle)
+        sub.setObjectName("PageSubtitle")
+        sub.setWordWrap(True)
+        root.addWidget(sub)
         self.platform_boxes, self.format_boxes, self.format_rows, self.format_msgs = {}, {}, {}, {}
 
         grid = QGridLayout()
@@ -41,8 +55,8 @@ class PlatformsPage(Page):
             cb.toggled.connect(lambda checked, k=spec.key: self._platform_changed(k, checked))
             grid.addWidget(card, i // 2, i % 2)
         self.platforms_msg = field_message_label()
-        self.content.addLayout(grid)
-        self.content.addWidget(self.platforms_msg)
+        root.addLayout(grid)
+        root.addWidget(self.platforms_msg)
 
         stores = Card("Target stores",
                       "Used only to tailor the generated instructions. Nothing is submitted or published.")
@@ -57,8 +71,7 @@ class PlatformsPage(Page):
         stores.add(row)
         self.stores_msg = field_message_label()
         stores.add(self.stores_msg)
-        self.content.addWidget(stores)
-        self.finish()
+        root.addWidget(stores)
 
         ctx.profileLoaded.connect(self.refresh)
         ctx.profileEdited.connect(self.update_validation)

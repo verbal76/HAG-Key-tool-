@@ -57,8 +57,8 @@ def test_navigation_requires_project(window, qapp):
     window.nav.setCurrentRow(4)
     qapp.processEvents()
     assert window.stack.currentIndex() == 0          # bounced back to Projects
-    window.nav.setCurrentRow(7)
-    assert window.stack.currentIndex() == 7          # Settings works without a project
+    window.nav.setCurrentRow(6)
+    assert window.stack.currentIndex() == 6          # Settings works without a project
     open_new(window)
     for row in range(window.nav.count()):
         window.nav.setCurrentRow(row)
@@ -98,7 +98,7 @@ def test_unsaved_changes_prompt(window, qapp, monkeypatch):
 
 def test_platform_and_store_checkboxes_update_profile(window, qapp):
     open_new(window, platforms=())
-    page = window.pages[3]
+    page = window.pages[1]
     page.platform_boxes["web"].setChecked(True)
     page.format_boxes["web"]["html5"].setChecked(True)
     page.store_boxes["steam"].setChecked(True)
@@ -108,8 +108,8 @@ def test_platform_and_store_checkboxes_update_profile(window, qapp):
 
 def test_secret_suffix_and_copy_buttons(window, qapp):
     open_new(window)
-    page = window.pages[5]
-    window.nav.setCurrentRow(5)
+    page = window.pages[4]
+    window.nav.setCurrentRow(4)
     page.suffix_radio.setChecked(True)
     page.suffix.setValue(3)
     assert page.name_fields["key_alias"].value() == "ANDROID_RELEASE_KEY_ALIAS_3"
@@ -120,13 +120,13 @@ def test_secret_suffix_and_copy_buttons(window, qapp):
         "ANDROID_RELEASE_KEY_ALIAS_3", "ANDROID_RELEASE_KEY_PASSWORD_3"]
     page.name_fields["key_password"].copy_btn.click()
     assert QGuiApplication.clipboard().text() == "ANDROID_RELEASE_KEY_PASSWORD_3"
-    assert "ANDROID_RELEASE_KEYSTORE_PASSWORD_3" in window.pages[6].text.toPlainText()
+    assert "ANDROID_RELEASE_KEYSTORE_PASSWORD_3" in window.pages[5].text.toPlainText()
 
 
 def test_generate_identity_in_background_and_copy_secret(window, qapp, monkeypatch, keytool_tools):
     open_new(window)
-    window.nav.setCurrentRow(4)
-    page = window.pages[4]
+    window.nav.setCurrentRow(3)
+    page = window.pages[3]
     monkeypatch.setattr(dialogs.GenerateIdentityDialog, "exec", lambda self: dialogs.GenerateIdentityDialog.Accepted)
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)  # skip "back up now?"
     ticks = []
@@ -148,13 +148,13 @@ def test_generate_identity_in_background_and_copy_secret(window, qapp, monkeypat
     assert creds.store_password not in page.store_pw.edit.text()     # not loaded until requested
     page.store_pw.copy_btn.click()
     assert QGuiApplication.clipboard().text() == creds.store_password
-    assert creds.store_password not in window.pages[6].text.toPlainText()
-    assert rec.fingerprint_sha256 in window.pages[6].text.toPlainText()
+    assert creds.store_password not in window.pages[5].text.toPlainText()
+    assert rec.fingerprint_sha256 in window.pages[5].text.toPlainText()
 
 
 def test_import_error_is_displayed(window, qapp, monkeypatch, keytool_tools, tmp_path):
     open_new(window)
-    page = window.pages[4]
+    page = window.pages[3]
     junk = tmp_path / "junk.jks"
     junk.write_bytes(b"not a keystore")
     monkeypatch.setattr(dialogs.ImportKeystoreDialog, "exec", lambda self: dialogs.ImportKeystoreDialog.Accepted)
@@ -183,18 +183,18 @@ def test_v11_pages_custom_secret_names_and_credential_rows(window, qapp, monkeyp
     ctx = window.ctx
 
     # custom secret names flow through to the generated prompt
-    secrets = window.pages[5]
-    window.nav.setCurrentRow(5)
+    secrets = window.pages[4]
+    window.nav.setCurrentRow(4)
     secrets.custom_radio.setChecked(True)
     secrets.custom_edits["key_alias"].setText("MY_ALIAS")
     assert ctx.profile.v11.secret_mode == "custom" and secrets.name_fields["key_alias"].value() == "MY_ALIAS"
-    assert "MY_ALIAS" in window.pages[6].text.toPlainText()
+    assert "MY_ALIAS" in window.pages[5].text.toPlainText()
     secrets.custom_edits["key_alias"].setText("bad name")
     assert secrets.name_error.isVisible() or secrets.name_error.text()
 
     # signing page lists only what the selected platforms need
-    window.nav.setCurrentRow(4)
-    card = window.pages[4].req_card
+    window.nav.setCurrentRow(3)
+    card = window.pages[3].req_card
     texts = [lbl.text() for lbl in card.findChildren(type(card.na_label)) if lbl.text()]
     assert any("Windows" in t for t in texts) and not any("Apple distribution" in t for t in texts)
     assert "Apple" in card.na_label.text()
@@ -211,3 +211,44 @@ def test_v11_pages_custom_secret_names_and_credential_rows(window, qapp, monkeyp
     p = ctx.profile
     assert (p.android_package, p.build_number, p.v11.project_kind) == ("com.hotatticgames.mymedievallife.dev", 21, "existing")
     assert before == {f: f.read_bytes() for f in root.rglob("*") if f.is_file()}
+
+
+def test_consolidated_layout_and_moved_identifiers(window, qapp, monkeypatch):
+    from hag_bsm.ui.dialogs import SuggestIdentifiersDialog
+    from PySide6.QtWidgets import QLabel
+
+    assert [window.nav.item(i).text() for i in range(window.nav.count())] == [
+        "Projects", "Application Details", "Project & Identifiers", "Signing Identities", "GitHub Secrets",
+        "Generated Prompt", "Settings"]
+
+    def order(page, titles):
+        pos = {t: min((w.mapTo(page.widget(), w.rect().topLeft()).y() for w in page.widget().findChildren(QLabel)
+                       if w.text() == t), default=None) for t in titles}
+        assert None not in pos.values(), pos
+        assert [pos[t] for t in titles] == sorted(pos[t] for t in titles), pos
+
+    p = open_new(window, platforms=("android",))
+    window.show()
+    window.nav.setCurrentRow(1)
+    qapp.processEvents()
+    order(window.pages[1], ["General", "Application icon", "Platforms & Stores"])
+    window.nav.setCurrentRow(2)
+    qapp.processEvents()
+    ids = window.pages[2]
+    order(ids, ["Project type", "Project folder", "Identifiers", "Application Identifiers"])
+    assert ids.android_pkg.isVisibleTo(ids) and not ids.apple_id.isVisibleTo(ids)
+
+    # platform selection on Application Details controls identifier fields on Project & Identifiers
+    window.pages[1].platform_boxes["ios"].setChecked(True)
+    qapp.processEvents()
+    assert ids.apple_id.isVisibleTo(ids) and not ids.macos_id.isVisibleTo(ids)
+
+    # approved suggestions populate the moved fields; values survive page switches
+    monkeypatch.setattr(SuggestIdentifiersDialog, "exec", lambda self: SuggestIdentifiersDialog.Accepted)
+    monkeypatch.setattr(SuggestIdentifiersDialog, "accepted_values", lambda self: {"android_package": "com.hot.moved"})
+    ids.suggest()
+    assert ids.android_pkg.text() == "com.hot.moved" and window.ctx.profile.android_package == "com.hot.moved"
+    ids.apple_id.setText("com.hot.apple")
+    window.nav.setCurrentRow(1)
+    window.nav.setCurrentRow(2)
+    assert ids.apple_id.text() == "com.hot.apple" and window.ctx.profile.apple_bundle_id == "com.hot.apple"

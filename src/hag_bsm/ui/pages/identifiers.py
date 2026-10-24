@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox, QRadioButton)
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QMessageBox, QRadioButton)
 
 from ... import discovery
 from ...identifiers import apply_choices
@@ -8,8 +9,7 @@ from ...validation import validate_profile
 from ..dialogs import InspectProjectDialog, SuggestIdentifiersDialog
 from ..widgets import Card, StatusBadge, button, muted_label
 from .base import Page, field_message_label, set_field_message
-
-ID_FIELDS = ("android_package", "android_dev_package", "apple_bundle_id", "macos_bundle_id", "desktop_app_id", "build_number")
+from .details import _with_message
 
 
 class IdentifiersPage(Page):
@@ -19,6 +19,7 @@ class IdentifiersPage(Page):
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
+        self.msgs = {}
         kind = Card("Project type", "A new project gets suggested identifiers. An existing project keeps the identifiers, build "
                                     "number and signing identity it already has.")
         row = QHBoxLayout()
@@ -67,12 +68,48 @@ class IdentifiersPage(Page):
         self.dev_id.setPlaceholderText("e.g. com.hotatticgames.mygame.dev")
         ids.add(self.dev_id)
         ids.add(muted_label("A development identifier makes a different app: its saves, installs and store listing are separate from "
-                            "the production identifier on the Application Details page."))
+                            "the production identifier below."))
         self.issues = field_message_label()
         ids.add(self.issues)
         self.content.addWidget(ids)
+
+        appids = Card("Application Identifiers",
+                      "Identifiers must never change after release, otherwise stores and devices treat the build "
+                      "as a different app. Fields appear for the platforms selected on the Application Details page.")
+        idform = QFormLayout()
+        idform.setSpacing(10)
+        self.android_pkg = QLineEdit()
+        self.android_pkg.setPlaceholderText("com.hotatticgames.mygame")
+        self.android_pkg.setToolTip("Android package name (applicationId). Letters, digits and underscores; "
+                                    "at least two parts separated by periods.")
+        self.apple_id = QLineEdit()
+        self.apple_id.setPlaceholderText("com.hotatticgames.mygame")
+        self.apple_id.setToolTip("Apple bundle identifier for iOS / iPadOS (and macOS unless overridden). "
+                                 "Letters, digits, hyphens and periods.")
+        self.macos_id = QLineEdit()
+        self.macos_id.setPlaceholderText("Leave blank to use the Apple bundle identifier")
+        self.desktop_id = QLineEdit()
+        self.desktop_id.setPlaceholderText("Optional, e.g. com.hotatticgames.mygame")
+        self.desktop_id.setToolTip("Optional identifier for Windows/Linux packaging (e.g. installer AppId).")
+        self.id_rows = {}
+        for label, widget, fld in (("Android package name", self.android_pkg, "android_package"),
+                                   ("Apple bundle identifier", self.apple_id, "apple_bundle_id"),
+                                   ("macOS bundle identifier", self.macos_id, "macos_bundle_id"),
+                                   ("Desktop identifier", self.desktop_id, "desktop_app_id")):
+            box, self.msgs[fld] = _with_message(widget)
+            lbl = QLabel(label)
+            idform.addRow(lbl, box)
+            self.id_rows[fld] = (lbl, box)
+        appids.add(idform)
+        self.no_ids_hint = muted_label("Select platforms in the Platforms & Stores section of the Application Details page "
+                                       "to see the identifiers they need.")
+        appids.add(self.no_ids_hint)
+        self.content.addWidget(appids)
         self.finish()
 
+        for w, attr in ((self.android_pkg, "android_package"), (self.apple_id, "apple_bundle_id"),
+                        (self.macos_id, "macos_bundle_id"), (self.desktop_id, "desktop_app_id")):
+            w.textChanged.connect(lambda text, a=attr: self._set(a, text))
         self.dev.toggled.connect(self._dev_toggled)
         self.dev_id.textChanged.connect(self._dev_id_changed)
         ctx.profileLoaded.connect(self.refresh)
@@ -82,6 +119,14 @@ class IdentifiersPage(Page):
     def _set_kind(self, key):
         if not self._updating and self.ctx.profile and self.ctx.profile.v11.project_kind != key:
             self.ctx.profile.v11.project_kind = key
+            self.ctx.mark_dirty()
+
+    def _set(self, attr, value):
+        if self._updating or not self.ctx.profile:
+            return
+        value = value.strip()
+        if getattr(self.ctx.profile, attr) != value:
+            setattr(self.ctx.profile, attr, value)
             self.ctx.mark_dirty()
 
     def _dev_toggled(self, on):
@@ -132,7 +177,7 @@ class IdentifiersPage(Page):
         if chosen:
             self.ctx.mark_dirty()
             self.refresh()
-            self.ctx.message.emit("Suggested identifiers applied. Review them on the Application Details page.", "info")
+            self.ctx.message.emit("Suggested identifiers applied. Review them in Application Identifiers below.", "info")
 
     def inspect(self):
         p = self.ctx.profile
@@ -168,6 +213,10 @@ class IdentifiersPage(Page):
             self.dev.setChecked(v.use_dev_identifier)
             self.dev_id.setText(v.android_dev_package)
             self.dev_id.setEnabled(v.use_dev_identifier)
+            self.android_pkg.setText(p.android_package)
+            self.apple_id.setText(p.apple_bundle_id)
+            self.macos_id.setText(p.macos_bundle_id)
+            self.desktop_id.setText(p.desktop_app_id)
         finally:
             self._updating = False
         self.inspect_btn.setEnabled(bool(v.project_dir))
@@ -185,5 +234,20 @@ class IdentifiersPage(Page):
 
     def update_validation(self):
         p = self.ctx.profile
-        if p:
-            set_field_message(self.issues, validate_profile(p, self.ctx.vault.exists, self.ctx.others()), ID_FIELDS)
+        if not p:
+            return
+        issues = validate_profile(p, self.ctx.vault.exists, self.ctx.others())
+        set_field_message(self.issues, issues, ("android_dev_package",))
+        for fld, lbl in self.msgs.items():
+            set_field_message(lbl, issues, fld)
+        plats = set(p.enabled_platforms())
+        visible = {
+            "android_package": "android" in plats,
+            "apple_bundle_id": bool(plats & {"ios", "macos"}),
+            "macos_bundle_id": "macos" in plats,
+            "desktop_app_id": bool(plats & {"windows", "linux"}),
+        }
+        for fld, (lbl, box) in self.id_rows.items():
+            lbl.setVisible(visible[fld])
+            box.setVisible(visible[fld])
+        self.no_ids_hint.setVisible(not any(visible.values()))

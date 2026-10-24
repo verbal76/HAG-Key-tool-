@@ -32,7 +32,7 @@ build workflow correctly.
   (Android calls it versionCode; Apple calls it CFBundleVersion).
 - **Release channel**: Private Testing, Beta or Production. The generated prompt never allows publishing
   without your authorization, whatever the channel.
-- **Identifiers** appear only for the platforms you selected:
+- **Application identifiers** are on the **Project & Identifiers** page and appear only for the platforms you selected under **Platforms & Stores** (below):
   - Android package name, for example `com.hotatticgames.backroomssurvivor`
   - Apple bundle identifier (iOS / iPadOS, and macOS unless you set a separate macOS one)
   - Optional desktop identifier for Windows/Linux installers
@@ -43,7 +43,7 @@ build workflow correctly.
 
 Problems are shown in red (must fix) or amber (worth checking) under each field.
 
-## Platforms & stores
+## Platforms & stores (section of Application Details)
 
 Tick each platform and the output files you want (for example APK and/or AAB for Android). Selecting a
 platform records your intent. It does not guarantee that the project can be built for it. The generated
@@ -204,7 +204,8 @@ each other.
 
 ## Version 1.1: existing projects, identifiers and secret names
 
-### New screen: Project & Identifiers
+### Screen: Project & Identifiers
+Sections, top to bottom: Project Type, Project Folder, Identifiers, Application Identifiers.
 - **Project type:** mark a project as *New* or *Existing*. An existing project keeps the identifiers, build number and signing
   identity it already has; the generated prompt says so explicitly.
 - **Project folder + Inspect Project:** link the game's folder (read-only). Godot, Unity and plain Android Gradle projects are

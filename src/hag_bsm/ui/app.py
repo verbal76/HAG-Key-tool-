@@ -101,7 +101,7 @@ def self_test(result_path: str) -> int:
             app.processEvents()
             if win.stack.currentIndex() != row:
                 raise RuntimeError(f"navigation to page {row} failed")
-        prompt_text = win.pages[6].text.toPlainText()
+        prompt_text = win.pages[5].text.toPlainText()
         if "Self Test Game" not in prompt_text:
             raise RuntimeError("prompt was not generated")
         lines.append(f"keytool: {ctx.tools.keytool}")

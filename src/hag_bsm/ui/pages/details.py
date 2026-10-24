@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLineEdit, QSpinBox,
+                               QVBoxLayout, QWidget)
 
 from ...icons import inspect_icon
 from ...model import CHANNELS
 from ...validation import validate_profile
 from ..widgets import Card, button, muted_label
 from .base import Page, field_message_label, set_field_message
+from .platforms import PlatformsSection
 
 
 def _with_message(widget):
@@ -23,7 +24,7 @@ def _with_message(widget):
 
 class DetailsPage(Page):
     title = "Application Details"
-    subtitle = "Basic information about the application. Identifiers are only required for the platforms you select."
+    subtitle = "Basic information about the application, its icon, and the platforms and stores it targets."
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -57,38 +58,6 @@ class DetailsPage(Page):
         general.add(form)
         self.content.addWidget(general)
 
-        ids = Card("Application identifiers",
-                   "Identifiers must never change after release, otherwise stores and devices treat the build "
-                   "as a different app.")
-        idform = QFormLayout()
-        idform.setSpacing(10)
-        self.android_pkg = QLineEdit()
-        self.android_pkg.setPlaceholderText("com.hotatticgames.mygame")
-        self.android_pkg.setToolTip("Android package name (applicationId). Letters, digits and underscores; "
-                                    "at least two parts separated by periods.")
-        self.apple_id = QLineEdit()
-        self.apple_id.setPlaceholderText("com.hotatticgames.mygame")
-        self.apple_id.setToolTip("Apple bundle identifier for iOS / iPadOS (and macOS unless overridden). "
-                                 "Letters, digits, hyphens and periods.")
-        self.macos_id = QLineEdit()
-        self.macos_id.setPlaceholderText("Leave blank to use the Apple bundle identifier")
-        self.desktop_id = QLineEdit()
-        self.desktop_id.setPlaceholderText("Optional, e.g. com.hotatticgames.mygame")
-        self.desktop_id.setToolTip("Optional identifier for Windows/Linux packaging (e.g. installer AppId).")
-        self.id_rows = {}
-        for label, widget, fld in (("Android package name", self.android_pkg, "android_package"),
-                                   ("Apple bundle identifier", self.apple_id, "apple_bundle_id"),
-                                   ("macOS bundle identifier", self.macos_id, "macos_bundle_id"),
-                                   ("Desktop identifier", self.desktop_id, "desktop_app_id")):
-            box, self.msgs[fld] = _with_message(widget)
-            lbl = QLabel(label)
-            idform.addRow(lbl, box)
-            self.id_rows[fld] = (lbl, box)
-        ids.add(idform)
-        self.no_ids_hint = muted_label("Select platforms on the Platforms & Stores page to see the identifiers they need.")
-        ids.add(self.no_ids_hint)
-        self.content.addWidget(ids)
-
         icon = Card("Application icon",
                     "Reference to an existing icon file. The file is not copied or modified, and no artwork is generated.")
         row = QHBoxLayout()
@@ -105,11 +74,15 @@ class DetailsPage(Page):
         icon.add(muted_label("Recommended: a square PNG of at least 1024×1024 (Apple), 512×512 (Google Play); "
                              "Windows executables use .ico."))
         self.content.addWidget(icon)
+
+        self.platforms = PlatformsSection(ctx)
+        self.content.addWidget(self.platforms)
+        for name in ("platform_boxes", "format_boxes", "format_rows", "format_msgs", "store_boxes",
+                     "platforms_msg", "stores_msg"):
+            setattr(self, name, getattr(self.platforms, name))
         self.finish()
 
         for w, attr in ((self.name, "name"), (self.publisher, "publisher"), (self.version, "version"),
-                        (self.android_pkg, "android_package"), (self.apple_id, "apple_bundle_id"),
-                        (self.macos_id, "macos_bundle_id"), (self.desktop_id, "desktop_app_id"),
                         (self.icon, "icon_path")):
             w.textChanged.connect(lambda text, a=attr: self._set(a, text))
         self.build.valueChanged.connect(lambda v: self._set("build_number", v))
@@ -144,10 +117,6 @@ class DetailsPage(Page):
             self.version.setText(p.version)
             self.build.setValue(p.build_number)
             self.channel.setCurrentIndex(max(0, self.channel.findData(p.release_channel)))
-            self.android_pkg.setText(p.android_package)
-            self.apple_id.setText(p.apple_bundle_id)
-            self.macos_id.setText(p.macos_bundle_id)
-            self.desktop_id.setText(p.desktop_app_id)
             self.icon.setText(p.icon_path)
         finally:
             self._updating = False
@@ -160,17 +129,6 @@ class DetailsPage(Page):
         issues = validate_profile(p, self.ctx.vault.exists, self.ctx.others())
         for fld, lbl in self.msgs.items():
             set_field_message(lbl, issues, fld)
-        plats = set(p.enabled_platforms())
-        visible = {
-            "android_package": "android" in plats,
-            "apple_bundle_id": bool(plats & {"ios", "macos"}),
-            "macos_bundle_id": "macos" in plats,
-            "desktop_app_id": bool(plats & {"windows", "linux"}),
-        }
-        for fld, (lbl, box) in self.id_rows.items():
-            lbl.setVisible(visible[fld])
-            box.setVisible(visible[fld])
-        self.no_ids_hint.setVisible(not any(visible.values()))
         info = inspect_icon(p.icon_path) if p.icon_path else None
         if info and info.exists and not info.error:
             size = f", {info.width}×{info.height}" if info.width else ""
