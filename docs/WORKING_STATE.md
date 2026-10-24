@@ -38,3 +38,7 @@ Recovery checkpoint for development sessions. Keep short and current.
   `tools/check_parity.py` verifies Kotlin-made backups/PKCS12 with Python + keytool.
 - PKCS12 generated with BC "PKCS12-AES256-AES128"; JKS import via own reader of the documented Sun format.
 - CI job `android`: core/apk/app unit tests, assembleDebug, emulator smoke test, upload APK artifact.
+
+## Backlog
+- **v1.1 upgrade directive — ON HOLD, AWAITING OWNER AUTHORIZATION.** Full spec in `docs/backlog/V1.1-UPGRADE-DIRECTIVE.md`.
+  Do not start until the owner says exactly: "Execute the Build & Signing Manager upgrade."
