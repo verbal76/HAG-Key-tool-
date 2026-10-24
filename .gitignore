@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+build/
+dist/
+.pytest_cache/
+*.egg-info/
+# Never commit signing material or user data
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.hagbackup
+credentials.bin
+vault.key
