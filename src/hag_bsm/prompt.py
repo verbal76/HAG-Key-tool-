@@ -8,7 +8,11 @@ cannot leak them.
 from . import APP_NAME, __version__
 from .credentials import CONFIGURED, MISSING, NA, REQUIRED, requirements
 from .discovery import WorkflowInfo, compare_names
+from . import apple as apple_mod
+from .checks import FAIL, OK
 from .model import APPLE_PLATFORMS, CHANNEL_LABELS, PLATFORM_BY_KEY, STORE_LABELS, Profile
+from .platform_secrets import PLAY_UPLOAD_NAMES, apple_suggestions
+from .playsigning import SHARED, play_checks
 from .secret_names import ROLE_DESCRIPTIONS, ROLES, names_for_profile, secret_names
 
 RULE = "=" * 72
@@ -114,7 +118,7 @@ def _workflow_lines(p: Profile, names: dict) -> list:
     return out
 
 
-def _project_status(p: Profile, identity: dict) -> list:
+def _project_status(p: Profile, identity: dict, upload_present: bool = False) -> list:
     """Version 1.1 section. Empty (so the prompt is unchanged) when the profile has no v1.1 data."""
     v = p.v11
     if not v.to_dict():
@@ -164,12 +168,12 @@ def _project_status(p: Profile, identity: dict) -> list:
                    "with this one.")
     out.append("Signing credentials by platform:")
     present = bool(identity)
-    for r in requirements(p, present):
+    for r in requirements(p, present, upload_present):
         if r.level == "not_applicable" and r.status == NA:
             continue
         state = "configured" if r.status == CONFIGURED else ("MISSING" if r.level == REQUIRED else "not configured (optional)")
         out.append(f"  - {r.label}: {r.level}, {state}")
-    gaps = [r.label for r in requirements(p, present) if r.level == REQUIRED and r.status == MISSING]
+    gaps = [r.label for r in requirements(p, present, upload_present) if r.level == REQUIRED and r.status == MISSING]
     if gaps:
         out.append("Missing configuration that prevents a reliable build: " + "; ".join(gaps)
                    + ". Report these as blockers; do not work around them with placeholders or debug signing.")
@@ -177,8 +181,94 @@ def _project_status(p: Profile, identity: dict) -> list:
     return out
 
 
-def generate_prompt(p: Profile, identity: dict = None) -> str:
-    """`identity` is the public summary of the linked Android identity: {'alias', 'fingerprint_sha256'}."""
+def _play_active(p: Profile, upload_identity) -> bool:
+    return bool(p.is_enabled("android") and "google_play" in p.stores and p.v11.to_dict())
+
+
+def _fp_line(label: str, sha256: str, sha1: str = "") -> str:
+    return f"  - {label}: SHA-256 {sha256}" + (f"; SHA-1 {sha1}" if sha1 else "")
+
+
+def _play_lines(p: Profile, identity: dict, upload_identity: dict) -> list:
+    """Google Play signing section: only for profiles with v1.1 data that target Google Play on Android."""
+    if not _play_active(p, upload_identity):
+        return []
+    v, direct, up = p.v11, identity or {}, upload_identity or {}
+    shared = bool(up) and bool(direct) and up.get("fingerprint_sha256") == direct.get("fingerprint_sha256")
+    out = [SUB, "GOOGLE PLAY SIGNING", SUB,
+           "Three DIFFERENT Android certificates can exist. Never treat one as another and never copy a fingerprint between them:"]
+    out.append(_fp_line("1. DIRECT APK signing key (APKs installed outside Google Play)", direct["fingerprint_sha256"], direct.get("fingerprint_sha1", ""))
+               if direct else "  - 1. DIRECT APK signing key: not configured in the manager")
+    if up:
+        out.append(_fp_line("2. Google Play UPLOAD key (signs the AAB uploaded to Google Play)", up["fingerprint_sha256"], up.get("fingerprint_sha1", ""))
+                   + ("  [the SAME key as the direct APK key]" if shared else "  [a separate key]"))
+    else:
+        out.append("  - 2. Google Play UPLOAD key: NOT configured in the manager. Report this as a blocker; do not create one.")
+    if v.play_signing_sha256:
+        out.append(_fp_line("3. Google Play APP-SIGNING certificate (held by Google, signs the APKs users receive)", v.play_signing_sha256, v.play_signing_sha1)
+                   + "  [entered by the owner; NOT verified by the manager]")
+    else:
+        out.append("  - 3. Google Play APP-SIGNING certificate: not recorded. Google holds this key; it can never be obtained or created locally.")
+    out.append("    Play App Signing enrollment: " + {"enrolled": "reported as enrolled by the owner (unverified)",
+                                                      "not_enrolled": "reported as NOT enrolled by the owner (unverified)"}.get(v.play_enrollment, "not recorded (unverified)"))
+    if v.play_console_upload_sha256:
+        out.append("    Play Console upload certificate SHA-256 as entered by the owner: " + v.play_console_upload_sha256
+                   + (" (matches the local upload key)" if up and up["fingerprint_sha256"] == v.play_console_upload_sha256 else " (UNVERIFIED or not matching the local key: report, do not 'fix')"))
+    out += ["Rules:",
+            "  - Sign the AAB that is uploaded to Google Play with the UPLOAD key (2). Play re-signs the APKs delivered to users with the app-signing certificate (3).",
+            "  - APKs installed directly on devices use the direct key (1). They can never update, or be updated by, a Play-delivered install unless Play App Signing uses that same key.",
+            "  - Do not generate, rotate or replace any key. Never reset the build number; Google Play rejects a lower or repeated versionCode.",
+            "  - Do not upload to Google Play or create any release. The owner uploads and authorizes every release."]
+    names = names_for_profile(p) if shared else PLAY_UPLOAD_NAMES
+    out.append("Upload-key GitHub secrets (names only): " + ", ".join(names.values())
+               + (" (the existing Android secrets, because the keys are the same)" if shared else "")
+               + ". The values stay in GitHub Secrets and are never placed in this prompt. Fingerprints are public and may be stored as repository variables.")
+    problems = [c for c in play_checks(p) if c.status != OK and c.status != "info"]
+    if problems:
+        out.append("Unresolved Google Play configuration (reported by the manager):")
+        out += [f"  - {c.text()}" for c in problems]
+    out.append("")
+    return out
+
+
+def _apple_lines(p: Profile) -> list:
+    if not (any(k in p.enabled_platforms() for k in APPLE_PLATFORMS) and p.v11.to_dict()):
+        return []
+    v = p.v11
+    out = [SUB, "APPLE SIGNING AND PROVISIONING", SUB,
+           apple_mod.MACOS_NOTE,
+           f"Apple Team ID: {v.apple_team_id or 'not recorded'}" + (" (entered by the owner; unverified)" if v.apple_team_id else "")]
+    if v.apple_dev_bundle_id:
+        out.append(f"Optional development bundle identifier: {v.apple_dev_bundle_id} (a different application from the production identifier)")
+    for c in v.apple_certs:
+        out.append(f"  - Certificate ({apple_mod.KIND_LABELS.get(c.get('kind'), 'unknown type')}): {c.get('name')}; valid until {c.get('not_after', '')[:10]}; "
+                   f"SHA-256 {c.get('sha256')}  [public metadata read from a file the owner imported]")
+    for pr in v.apple_profiles:
+        out.append(f"  - Provisioning profile ({apple_mod.PROFILE_KINDS.get(pr.get('kind'), pr.get('kind'))}): {pr.get('name')}; App ID {pr.get('bundle_id')}; "
+                   f"Team {pr.get('team_id')}; expires {pr.get('not_after', '')[:10]}")
+    if not v.apple_certs and not v.apple_profiles:
+        out.append("  - No Apple certificates or provisioning profiles are recorded.")
+    problems = [c for c in apple_mod.apple_checks(p) if c.status in ("warn", "fail")]
+    if problems:
+        out.append("Unresolved Apple configuration (reported by the manager):")
+        out += [f"  - {c.text()}" for c in problems]
+    out.append("Rules:")
+    out += ["  - Run Apple build, signing and notarization steps on a macOS runner (for example `macos-latest`). Do not attempt them on Windows or Linux runners.",
+            "  - Keep the bundle identifiers above exactly as they are for existing applications. Never create placeholder or fake certificates, profiles or Team IDs.",
+            "  - Development signing and distribution signing are different: use development certificates and profiles only for development builds.",
+            "  - The manager cannot prove that an Apple Developer account, certificate or profile is valid for distribution. Treat all of the above as unverified until the build succeeds.",
+            "  - Do not publish, notarize for release, or submit to TestFlight or the App Store without the owner's explicit authorization."]
+    sugg = apple_suggestions(p)
+    if sugg:
+        out.append("Suggested GitHub names (names only; the owner adds the values, nothing is uploaded by the manager):")
+        out += [f"  - {n} ({'repository variable' if k == 'variable' else 'secret'}): {d}" for n, k, d in sugg]
+    out.append("")
+    return out
+
+
+def generate_prompt(p: Profile, identity: dict = None, upload_identity: dict = None) -> str:
+    """`identity` is the public summary of the linked Android identity: {'alias', 'fingerprint_sha256'}.
+    `upload_identity` is the same kind of summary for the Google Play upload key (public information only)."""
     plats = p.enabled_platforms()
     has_android = "android" in plats
     has_apple = any(k in plats for k in APPLE_PLATFORMS)
@@ -217,7 +307,7 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
         w(f"Application icon (owner's local file, to be added to the repository if not already present): {p.icon_path}")
         w("")
 
-    for line in _project_status(p, identity):
+    for line in _project_status(p, identity, bool(upload_identity)):
         w(line)
 
     if has_android:
@@ -247,7 +337,7 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
           "to debug signing for a release artifact.")
         w(f"  - Keep the package name {p.effective_android_id() or '(as already configured)'} unchanged. "
           "Set versionCode to the build number and versionName to the version.")
-        if "aab" in p.formats("android"):
+        if "aab" in p.formats("android") and not _play_active(p, upload_identity):
             w("  - An AAB is the Google Play upload format and is not directly installable. If Google Play "
               "App Signing is enabled, this keystore is the upload key; Google re-signs APKs for users.")
         if "apk" in p.formats("android"):
@@ -260,6 +350,9 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
         w("  - Never generate a new keystore or replacement signing identity. If no usable identity is "
           "configured, stop and report it as a blocker.")
         w("")
+
+    for line in _play_lines(p, identity, upload_identity):
+        w(line)
 
     other = [k for k in plats if k != "android"]
     if other:
@@ -288,6 +381,9 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
             w("Apple builds cannot be completed on Windows-only infrastructure. Use a macOS runner or report it "
               "as a blocker.")
         w("")
+
+    for line in _apple_lines(p):
+        w(line)
 
     w(SUB)
     w("BUILD ARTIFACT NAMING")

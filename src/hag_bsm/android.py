@@ -185,6 +185,16 @@ def read_certificate(tools: AndroidTools, keystore: Path, store_password: str, a
     return cert_info(x509.load_pem_x509_certificate(match.group(0).encode()))
 
 
+def export_certificate_pem(tools: AndroidTools, keystore: Path, store_password: str, alias: str) -> str:
+    """The PUBLIC certificate of `alias` as PEM text (what Google Play Console asks for). No private key is read."""
+    res = _keytool(tools, ["-exportcert", "-rfc", "-alias", alias, "-keystore", str(keystore),
+                           "-storepass:env", _ENV_STORE], store_password)
+    match = re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", res.stdout, re.S)
+    if not match:
+        raise SigningError("failed", "keytool did not return a certificate.", res.output)
+    return match.group(0).replace("\r", "") + "\n"
+
+
 def verify_key_access(tools: AndroidTools, keystore: Path, store_password: str, alias: str, key_password: str) -> None:
     """Prove the private key can be unlocked by asking keytool to sign a certificate request with it.
     The request is written to stdout and discarded."""

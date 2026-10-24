@@ -82,6 +82,18 @@ class V11:
     linux_package_signing: bool = False
     web_deployment: bool = False
     attested: list = field(default_factory=list)            # credential keys the owner marked as configured
+    # Google Play (public information and a link to a vault identity only; never key material)
+    play_upload_identity_id: str = ""   # vault identity used to sign Google Play uploads (may equal the direct key)
+    play_console_upload_sha256: str = ""  # upload certificate SHA-256 as shown in Play Console (user-reported)
+    play_signing_sha256: str = ""       # Google's app-signing certificate (user-reported or from an imported certificate)
+    play_signing_sha1: str = ""
+    play_signing_cert_pem: str = ""     # optional imported PUBLIC certificate
+    play_enrollment: str = ""           # "", "enrolled", "not_enrolled": reported by the owner, never verified here
+    # Apple (public metadata only; private keys and P12 files are never stored)
+    apple_team_id: str = ""
+    apple_dev_bundle_id: str = ""
+    apple_certs: list = field(default_factory=list)
+    apple_profiles: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         default = V11()

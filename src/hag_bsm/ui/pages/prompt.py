@@ -67,7 +67,8 @@ class PromptPage(Page):
         else:
             self.issues_badge.set("Prompt is up to date with the project settings.", "info")
         rec = self.ctx.identity()
-        self.text.setPlainText(generate_prompt(p, rec.public_summary() if rec else None))
+        up = self.ctx.upload_identity()
+        self.text.setPlainText(generate_prompt(p, rec.public_summary() if rec else None, up.public_summary() if up else None))
         self.copy_btn.setEnabled(True)
         self.save_btn.setEnabled(True)
 

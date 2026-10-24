@@ -192,6 +192,16 @@ def _validate_v11(p: Profile, plats, others) -> list:
         if code and p.build_number < code:
             out.append(Issue(ERROR, "build_number", f"The project is already at build {code}; build {p.build_number} would go backwards. "
                                                     "Use Inspect Project to adopt the existing build number."))
+    from .apple import validate_team_id
+    from .playsigning import validate_fingerprint
+    if err := validate_team_id(v.apple_team_id):
+        out.append(Issue(ERROR, "apple_team_id", err))
+    if v.apple_dev_bundle_id.strip() and any(k in plats for k in APPLE_PLATFORMS):
+        if err := validate_bundle_id(v.apple_dev_bundle_id.strip(), "Apple development bundle identifier"):
+            out.append(Issue(ERROR, "apple_dev_bundle_id", err))
+    for fld, nbytes in (("play_console_upload_sha256", 32), ("play_signing_sha256", 32), ("play_signing_sha1", 20)):
+        if err := validate_fingerprint(getattr(v, fld), nbytes):
+            out.append(Issue(ERROR, fld, err))
     for c in find_conflicts(p, others or []):
         fld = {"android": "android_package", "apple": "apple_bundle_id", "desktop": "desktop_app_id"}[c.ecosystem]
         out.append(Issue(WARNING, fld, f"{c.identifier} is also assigned to “{c.other_name}” on the same platform."))

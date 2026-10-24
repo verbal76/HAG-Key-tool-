@@ -82,7 +82,8 @@ class IdentityRecord:
 
     def public_summary(self) -> dict:
         return {"alias": self.alias, "fingerprint_sha256": self.fingerprint_sha256,
-                "store_type": self.store_type, "key_password_matches_store": self.key_password_matches_store}
+                "store_type": self.store_type, "key_password_matches_store": self.key_password_matches_store,
+                "fingerprint_sha1": self.fingerprint_sha1, "not_after": self.not_after}
 
 
 class VaultError(Exception):
@@ -178,7 +179,7 @@ class IdentityVault:
             key_size=cert.key_size, **extra)
 
     def generate(self, tools: AndroidTools, project_name: str, alias: str, filename: str, dname: str,
-                 validity_days: int = android.DEFAULT_VALIDITY_DAYS) -> IdentityRecord:
+                 validity_days: int = android.DEFAULT_VALIDITY_DAYS, role: str = "release") -> IdentityRecord:
         """Generate a brand-new identity in its own folder. Never touches existing identities."""
         _check_filename(filename)
         _check_alias(alias)
@@ -188,7 +189,7 @@ class IdentityVault:
         try:
             cert = android.generate_keystore(tools, folder / filename, alias, password, dname, validity_days)
             self._write_credentials(iid, Credentials(password, password))
-            rec = self._record_from_cert(iid, f"{project_name} release key", alias, filename, "PKCS12",
+            rec = self._record_from_cert(iid, f"{project_name} {role} key", alias, filename, "PKCS12",
                                          "generated", cert, project_name=project_name)
             self.save_record(rec)
             return rec

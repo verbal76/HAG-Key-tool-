@@ -86,6 +86,17 @@ class AppContext(QObject):
             return self.vault.get(self.profile.android_identity_id)
         return None
 
+    def upload_identity(self):
+        iid = self.profile.v11.play_upload_identity_id if self.profile else ""
+        return self.vault.get(iid) if iid and self.vault.exists(iid) else None
+
+    def link_upload_identity(self, identity_id: str):
+        """Link the Google Play upload key and save immediately. The direct APK signing link is never touched."""
+        self.profile.v11.play_upload_identity_id = identity_id
+        self.mark_dirty()
+        self.save_profile()
+        self.identitiesChanged.emit()
+
     def link_identity(self, identity_id: str):
         """Link an identity to the open project and save immediately so the link is never lost."""
         self.profile.android_identity_id = identity_id

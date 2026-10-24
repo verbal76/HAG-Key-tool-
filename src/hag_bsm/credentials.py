@@ -24,8 +24,9 @@ class Requirement:
         return self.key in ATTESTABLE
 
 
-def requirements(p, identity_present: bool) -> list:
+def requirements(p, identity_present: bool, upload_present: bool = False) -> list:
     v, att, rows = p.v11, set(p.v11.attested), []
+    certs = {c.get("kind") for c in v.apple_certs}
 
     def add(key, platform, label, level, detail, checked=False):
         if level == NOT_APPLICABLE:
@@ -40,6 +41,10 @@ def requirements(p, identity_present: bool) -> list:
     else:
         add("android_keystore", "android", "Android signing keystore", NOT_APPLICABLE,
             "Android is not selected." + (" The linked identity is kept." if identity_present else ""), identity_present)
+
+    if p.is_enabled("android") and "google_play" in p.stores:
+        add("play_upload", "android", "Google Play upload signing key (kept separate from Google's app-signing key)", REQUIRED,
+            "Generate, import or choose the upload key on this screen.", upload_present)
 
     if p.is_enabled("windows"):
         add("windows_codesign", "windows", "Windows code-signing certificate (Authenticode)",
@@ -59,16 +64,17 @@ def requirements(p, identity_present: bool) -> list:
 
     if p.is_enabled("ios"):
         add("ios_certificate", "ios", "Apple distribution certificate (iOS / iPadOS)", REQUIRED,
-            "Issued by Apple; created in an Apple Developer account, not by this application.", "ios_certificate" in att)
+            "Issued by Apple; created in an Apple Developer account, not by this application. Imported certificate metadata counts "
+            "as recorded, not as verified.", "ios_certificate" in att or "distribution" in certs)
         add("ios_profile", "ios", "Provisioning profile for the bundle identifier", REQUIRED,
-            "Must match the Apple bundle identifier.", "ios_profile" in att)
+            "Must match the Apple bundle identifier.", "ios_profile" in att or bool(v.apple_profiles))
     else:
         add("ios_certificate", "ios", "Apple signing for iOS / iPadOS", NOT_APPLICABLE, "iOS / iPadOS is not selected.")
 
     if p.is_enabled("macos"):
         level = OPTIONAL if p.release_channel == "private_testing" and "app_store" not in p.stores else REQUIRED
         add("macos_developer_id", "macos", "Developer ID Application certificate (macOS)", level,
-            "Signing requires macOS (a Mac or a macOS CI runner).", "macos_developer_id" in att)
+            "Signing requires macOS (a Mac or a macOS CI runner).", "macos_developer_id" in att or "developer_id" in certs)
         add("macos_notarization", "macos", "Apple notarization credentials", level,
             "Needed to distribute outside the App Store.", "macos_notarization" in att)
     else:

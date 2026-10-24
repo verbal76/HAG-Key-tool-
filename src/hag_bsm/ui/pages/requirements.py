@@ -58,7 +58,7 @@ class RequirementsCard(Card):
             if w:
                 w.deleteLater()
         na = []
-        for r in requirements(p, self.ctx.identity() is not None):
+        for r in requirements(p, self.ctx.identity() is not None, self.ctx.upload_identity() is not None):
             if r.status == NA and r.level != REQUIRED:
                 na.append(r.label)
                 continue
