@@ -77,8 +77,9 @@ def validate_build_number(build, platforms) -> str:
     return ""
 
 
-def validate_profile(p: Profile, identity_exists=None) -> list:
-    """Return a list of Issues. `identity_exists(id) -> bool` checks the vault if provided."""
+def validate_profile(p: Profile, identity_exists=None, others=None) -> list:
+    """Return a list of Issues. `identity_exists(id) -> bool` checks the vault if provided; `others` are the
+    manager's other projects, used for the identifier registry."""
     issues = []
     add = lambda level, fld, msg: issues.append(Issue(level, fld, msg))
     plats = p.enabled_platforms()
@@ -151,7 +152,50 @@ def validate_profile(p: Profile, identity_exists=None) -> list:
         elif identity_exists is not None and not identity_exists(p.android_identity_id):
             add(ERROR, "signing", "The Android signing identity linked to this project is missing from the vault. "
                                   "Restore it from a backup or re-import the keystore.")
+    issues.extend(_validate_v11(p, plats, others))
     return issues
+
+
+def _validate_v11(p: Profile, plats, others) -> list:
+    """Checks for version 1.1 data. They add nothing for a profile that has none."""
+    from .identifiers import find_conflicts
+    from .secret_names import custom_names
+
+    out, v = [], p.v11
+    if v.use_dev_identifier and "android" in plats:
+        dev = v.android_dev_package.strip()
+        if not dev:
+            out.append(Issue(ERROR, "android_dev_package", "Enter the development Android identifier, or turn the option off."))
+        elif err := validate_android_package(dev):
+            out.append(Issue(ERROR, "android_dev_package", err))
+        elif dev == p.android_package.strip():
+            out.append(Issue(WARNING, "android_dev_package", "The development identifier equals the production one, "
+                                                           "so it does not create a separate application identity."))
+    if v.secret_mode in ("custom", "workflow"):
+        try:
+            custom_names(v.secret_custom)
+        except ValueError as exc:
+            out.append(Issue(ERROR, "secret_custom", str(exc)))
+    if v.project_kind == "existing" and v.discovered:
+        d = v.discovered
+        eff = p.effective_android_id()
+        if "android" in plats and d.get("android_package") and eff != d["android_package"]:
+            out.append(Issue(WARNING, "android_package",
+                             f"The project currently uses {d['android_package']}. Using {eff or '(empty)'} instead makes Android and "
+                             "Google Play treat builds as a different application that cannot update existing installs."))
+        for fld, key, label in (("apple_bundle_id", "apple_bundle_id", "Apple bundle identifier"),
+                                ("desktop_app_id", "desktop_app_id", "desktop identifier")):
+            if d.get(key) and getattr(p, fld).strip() != d[key]:
+                out.append(Issue(WARNING, fld, f"The project currently uses {d[key]} as its {label}. Changing it can make the "
+                                               "platform treat builds as a different application or reset saved data."))
+        code = int(d.get("version_code") or 0)
+        if code and p.build_number < code:
+            out.append(Issue(ERROR, "build_number", f"The project is already at build {code}; build {p.build_number} would go backwards. "
+                                                    "Use Inspect Project to adopt the existing build number."))
+    for c in find_conflicts(p, others or []):
+        fld = {"android": "android_package", "apple": "apple_bundle_id", "desktop": "desktop_app_id"}[c.ecosystem]
+        out.append(Issue(WARNING, fld, f"{c.identifier} is also assigned to “{c.other_name}” on the same platform."))
+    return out
 
 
 def has_errors(issues) -> bool:

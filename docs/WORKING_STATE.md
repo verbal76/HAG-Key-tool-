@@ -40,5 +40,9 @@ Recovery checkpoint for development sessions. Keep short and current.
 - CI job `android`: core/apk/app unit tests, assembleDebug, emulator smoke test, upload APK artifact.
 
 ## Backlog
-- **v1.1 upgrade directive — ON HOLD, AWAITING OWNER AUTHORIZATION.** Full spec in `docs/backlog/V1.1-UPGRADE-DIRECTIVE.md`.
-  Do not start until the owner says exactly: "Execute the Build & Signing Manager upgrade."
+- **v1.1 upgrade directive — AUTHORIZED; Windows app implemented (1.1.0).** Full spec in `docs/backlog/V1.1-UPGRADE-DIRECTIVE.md`.
+  New modules: identifiers.py, discovery.py (project + workflow inspection), credentials.py, profile_import.py; ui pages
+  identifiers.py/requirements.py; dialogs for inspect/suggest/workflow/discovery. Profiles stay schema 1 unless they hold v1.1 data
+  (then schema 2 with a "v11" object); Android refuses schema 2. Parity (prompt/validation) with the Kotlin core is preserved for
+  v1.0-style profiles — keep `PROMPT_VERSION` in Model.kt equal to Python `__version__`.
+  **Not done / next:** Android port of v1.1; Backrooms regression scenario (owner excluded it); real-GitHub inspection (not required).

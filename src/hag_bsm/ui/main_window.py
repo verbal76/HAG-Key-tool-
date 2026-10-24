@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWi
 from .. import APP_NAME, __version__
 from .appicon import app_icon
 from .pages.details import DetailsPage
+from .pages.identifiers import IdentifiersPage
 from .pages.platforms import PlatformsPage
 from .pages.projects import ProjectsPage
 from .pages.prompt import PromptPage
@@ -18,6 +19,7 @@ from .widgets import button
 NAV = [
     ("Projects", ProjectsPage, QStyle.SP_DirHomeIcon),
     ("Application Details", DetailsPage, QStyle.SP_FileDialogDetailedView),
+    ("Project & Identifiers", IdentifiersPage, QStyle.SP_DirOpenIcon),
     ("Platforms & Stores", PlatformsPage, QStyle.SP_ComputerIcon),
     ("Signing Identities", SigningPage, QStyle.SP_DialogApplyButton),
     ("GitHub Secrets", SecretsPage, QStyle.SP_FileDialogContentsView),

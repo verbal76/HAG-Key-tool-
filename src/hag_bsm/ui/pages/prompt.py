@@ -50,7 +50,7 @@ class PromptPage(Page):
         if not p:
             self.text.clear()
             return
-        issues = validate_profile(p, self.ctx.vault.exists)
+        issues = validate_profile(p, self.ctx.vault.exists, self.ctx.others())
         errors = [i for i in issues if i.level == ERROR]
         warnings = [i for i in issues if i.level != ERROR]
         if errors:

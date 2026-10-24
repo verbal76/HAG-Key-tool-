@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .fsutil import atomic_write_json, write_new_file
-from .model import PLATFORMS, SCHEMA_VERSION, Profile, new_id, now_iso
+from .model import MAX_SCHEMA_VERSION, PLATFORMS, SCHEMA_VERSION, Profile, new_id, now_iso
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def migrate(data: dict) -> dict:
     version = data.get("schema_version", 0)
     if not isinstance(version, int) or isinstance(version, bool):
         raise ProfileError("The profile has an invalid schema_version.")
-    if version > SCHEMA_VERSION:
+    if version > MAX_SCHEMA_VERSION:
         raise ProfileError(f"This profile was saved by a newer version of the application "
                            f"(schema {version}). Update the application to open it.")
     while version < SCHEMA_VERSION:
@@ -104,7 +104,7 @@ class ProfileStore:
             raise ProfileError(f"{path.name} is not valid JSON ({exc.msg} at line {exc.lineno}).") from exc
         original_version = raw.get("schema_version", 0) if isinstance(raw, dict) else None
         profile = parse_profile_data(raw)
-        if original_version != SCHEMA_VERSION:
+        if original_version == 0:
             # Keep the pre-migration file before writing the upgraded one.
             backup = path.with_name(f"{path.stem}.v{original_version}.bak.json")
             if not backup.exists():

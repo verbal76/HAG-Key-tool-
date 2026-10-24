@@ -1,7 +1,12 @@
-from PySide6.QtWidgets import QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QRadioButton, QSpinBox
+from pathlib import Path
 
-from ...secret_names import DEFAULT_NAMES, MAX_SUFFIX, ROLE_DESCRIPTIONS, ROLES, names_for_profile
+from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QRadioButton,
+                               QSpinBox, QWidget, QFormLayout)
+
+from ... import discovery
+from ...secret_names import DEFAULT_NAMES, MAX_SUFFIX, ROLE_DESCRIPTIONS, ROLES, custom_names, names_for_profile, secret_names
 from .. import clipboard
+from ..dialogs import WorkflowDialog
 from ..widgets import Card, CopyField, SecretField, StatusBadge, button, flash, muted_label
 from .base import Page
 
@@ -10,8 +15,8 @@ INSTRUCTIONS = """How to add these secrets to GitHub:
 2. Click “New repository secret”.
 3. Paste the secret name (left column) into “Name”, and the matching value into “Secret”.
 4. Click “Add secret”. Repeat for all four.
-GitHub never shows a secret value again after it is saved. If a name already exists, choose “Yes, add a
-numeric suffix” above instead of overwriting it."""
+GitHub never shows a secret value again after it is saved. If a name already exists, choose a numeric suffix or custom names
+above instead of overwriting it."""
 
 
 class SecretsPage(Page):
@@ -28,26 +33,41 @@ class SecretsPage(Page):
         names_card = Card("1. Secret names",
                           "A secret name is only a label in your repository. Changing it never changes or "
                           "regenerates your signing key.")
-        names_card.add(QLabel("<b>Have you already used these secret names in this repository?</b>"))
-        defaults = muted_label("Default names: " + ", ".join(DEFAULT_NAMES.values()))
-        names_card.add(defaults)
+        names_card.add(QLabel("<b>Which secret names should the workflow use?</b>"))
+        names_card.add(muted_label("Default names: " + ", ".join(DEFAULT_NAMES.values())))
         row = QHBoxLayout()
-        self.no_radio = QRadioButton("No, use the default names")
-        self.yes_radio = QRadioButton("Yes, add a numeric suffix")
+        self.default_radio = QRadioButton("The default names")
+        self.suffix_radio = QRadioButton("Defaults with a numeric suffix")
+        self.custom_radio = QRadioButton("Custom names")
         group = QButtonGroup(self)
-        group.addButton(self.no_radio)
-        group.addButton(self.yes_radio)
+        for rb in (self.default_radio, self.suffix_radio, self.custom_radio):
+            group.addButton(rb)
+            row.addWidget(rb)
         self.suffix = QSpinBox()
         self.suffix.setRange(1, MAX_SUFFIX)
         self.suffix.setPrefix("Suffix: ")
         self.suffix.setToolTip("A positive whole number appended to every name, e.g. 2 → ANDROID_RELEASE_KEY_ALIAS_2")
-        row.addWidget(self.no_radio)
-        row.addWidget(self.yes_radio)
         row.addWidget(self.suffix)
         row.addStretch(1)
         names_card.add(row)
-        names_card.add(muted_label("This application has not checked your repository. Look under Settings → "
-                                   "Secrets and variables → Actions to see which names already exist."))
+
+        self.custom_box = QWidget()
+        form = QFormLayout(self.custom_box)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.custom_edits = {}
+        for role in ROLES:
+            e = QLineEdit()
+            e.setObjectName("Mono")
+            e.textChanged.connect(self._custom_changed)
+            form.addRow(ROLE_DESCRIPTIONS[role] + ":", e)
+            self.custom_edits[role] = e
+        names_card.add(self.custom_box)
+        self.custom_note = muted_label("")
+        names_card.add(self.custom_note)
+        self.name_error = StatusBadge("", "error")
+        names_card.add(self.name_error)
+        names_card.add(muted_label("This application has not checked your repository. Look under Settings → Secrets and variables → "
+                                   "Actions to see which names already exist. Existing secrets are never renamed or overwritten."))
 
         names_card.add(QLabel("<b>Final secret names</b>"))
         grid = QGridLayout()
@@ -60,12 +80,23 @@ class SecretsPage(Page):
             grid.addWidget(muted_label(ROLE_DESCRIPTIONS[role], wrap=False), i, 1)
             self.name_fields[role] = f
         names_card.add(grid)
-        self.copy_all_btn = button("Copy All Names", slot=self.copy_all_names)
         r2 = QHBoxLayout()
+        self.copy_all_btn = button("Copy All Names", slot=self.copy_all_names)
         r2.addWidget(self.copy_all_btn)
         r2.addStretch(1)
         names_card.add(r2)
         self.content.addWidget(names_card)
+
+        wf = Card("Repository workflows", "Optional. Link your game's project folder, then read its workflow files (read-only) to see "
+                                          "which secret names they use and how to reconcile them with the names above.")
+        wrow = QHBoxLayout()
+        self.wf_btn = button("Inspect Workflows…", "Primary", "Read the workflow files in the linked project folder", self.inspect_workflows)
+        wrow.addWidget(self.wf_btn)
+        wrow.addStretch(1)
+        wf.add(wrow)
+        self.wf_status = muted_label("")
+        wf.add(self.wf_status)
+        self.content.addWidget(wf)
 
         values_card = Card("2. Secret values",
                            "Values are masked. They are copied only when you click a Copy Value button, and are "
@@ -75,8 +106,7 @@ class SecretsPage(Page):
         values_card.add(self.no_identity)
         vgrid = QGridLayout()
         vgrid.setHorizontalSpacing(10)
-        self.value_labels = {}
-        self.value_fields = {}
+        self.value_labels, self.value_fields = {}, {}
         for i, role in enumerate(ROLES):
             lbl = QLabel()
             lbl.setObjectName("Mono")
@@ -84,8 +114,7 @@ class SecretsPage(Page):
             sf = SecretField()
             sf.on_error = lambda exc: self.ctx.message.emit(f"Credentials could not be read: {exc}", "error")
             vgrid.addWidget(sf, i, 1)
-            self.value_labels[role] = lbl
-            self.value_fields[role] = sf
+            self.value_labels[role], self.value_fields[role] = lbl, sf
         vgrid.setColumnStretch(1, 1)
         values_card.add(vgrid)
         self.content.addWidget(values_card)
@@ -95,28 +124,57 @@ class SecretsPage(Page):
         self.content.addWidget(help_card)
         self.finish()
 
-        self.no_radio.toggled.connect(self._changed)
-        self.suffix.valueChanged.connect(self._changed)
+        for rb in (self.default_radio, self.suffix_radio, self.custom_radio):
+            rb.toggled.connect(self._mode_changed)
+        self.suffix.valueChanged.connect(self._mode_changed)
         ctx.profileLoaded.connect(self.refresh)
         ctx.identitiesChanged.connect(self.refresh)
         ctx.profileEdited.connect(self._update_android_flag)
 
-    def _changed(self, *_):
-        self.suffix.setEnabled(self.yes_radio.isChecked())
+    # --- editing ---------------------------------------------------------------------------------
+    def _mode_changed(self, *_):
+        custom = self.custom_radio.isChecked()
+        self.suffix.setEnabled(self.suffix_radio.isChecked())
+        self.custom_box.setVisible(custom)
         if self._updating or not self.ctx.profile:
             return
-        p = self.ctx.profile
-        use, suffix = self.yes_radio.isChecked(), self.suffix.value()
-        if (p.secret_use_suffix, p.secret_suffix) != (use, suffix):
-            p.secret_use_suffix, p.secret_suffix = use, suffix
-            self.ctx.mark_dirty()
+        p, v = self.ctx.profile, self.ctx.profile.v11
+        if custom and v.secret_mode not in ("custom", "workflow"):
+            v.secret_mode = "custom"
+            if not v.secret_custom:                       # start from the names in use now
+                try:
+                    v.secret_custom = dict(names_for_profile(p))
+                except ValueError:
+                    v.secret_custom = dict(DEFAULT_NAMES)
+            self._load_custom()
+        elif not custom:
+            v.secret_mode = ""
+        p.secret_use_suffix, p.secret_suffix = self.suffix_radio.isChecked(), self.suffix.value()
+        self.ctx.mark_dirty()
         self._show_names()
+
+    def _custom_changed(self, *_):
+        if self._updating or not self.ctx.profile or self.ctx.profile.v11.secret_mode not in ("custom", "workflow"):
+            return
+        self.ctx.profile.v11.secret_custom = {r: e.text().strip() for r, e in self.custom_edits.items()}
+        self.ctx.mark_dirty()
+        self._show_names()
+
+    def _load_custom(self):
+        self._updating = True
+        try:
+            for role, e in self.custom_edits.items():
+                e.setText(self.ctx.profile.v11.secret_custom.get(role, ""))
+        finally:
+            self._updating = False
 
     def _show_names(self):
         try:
             names = names_for_profile(self.ctx.profile)
-        except ValueError:
+            self.name_error.set("")
+        except ValueError as exc:
             names = {r: "" for r in ROLES}
+            self.name_error.set(str(exc), "error")
         for role, f in self.name_fields.items():
             f.set_value(names[role])
             self.value_labels[role].setText(names[role])
@@ -129,13 +187,22 @@ class SecretsPage(Page):
         p = self.ctx.profile
         if not p:
             return
+        v = p.v11
         self._updating = True
         try:
-            (self.yes_radio if p.secret_use_suffix else self.no_radio).setChecked(True)
+            if v.secret_mode in ("custom", "workflow"):
+                self.custom_radio.setChecked(True)
+            else:
+                (self.suffix_radio if p.secret_use_suffix else self.default_radio).setChecked(True)
             self.suffix.setValue(min(max(p.secret_suffix, 1), MAX_SUFFIX))
-            self.suffix.setEnabled(p.secret_use_suffix)
+            self.suffix.setEnabled(self.suffix_radio.isChecked())
+            self.custom_box.setVisible(self.custom_radio.isChecked())
         finally:
             self._updating = False
+        self._load_custom()
+        self.custom_note.setText("These names were adopted from the repository's workflow." if v.secret_mode == "workflow" else "")
+        self.wf_btn.setEnabled(True)
+        self.wf_status.setText(self._wf_summary())
         self._show_names()
         self._update_android_flag()
 
@@ -155,7 +222,45 @@ class SecretsPage(Page):
         for role, sf in self.value_fields.items():
             sf.set_provider(providers[role])
 
+    def _wf_summary(self) -> str:
+        v = self.ctx.profile.v11
+        if not v.workflow_info:
+            return "Not inspected." + ("" if v.project_dir else " Link the project folder on the Project & Identifiers page first.")
+        decision = {"adapt_workflow": "adapt the workflow to the manager's names", "use_workflow_names": "use the workflow's names",
+                    "custom_mapping": "use custom names"}.get(v.workflow_choice, "no decision yet")
+        return f"Inspected {str(v.workflow_info.get('inspected_at', ''))[:10]}. Decision: {decision}."
+
     def copy_all_names(self):
-        text = "\n".join(f.value() for f in self.name_fields.values())
-        clipboard.copy_text(text)
+        clipboard.copy_text("\n".join(f.value() for f in self.name_fields.values()))
         flash(self.copy_all_btn)
+
+    # --- workflow inspection (read-only) ----------------------------------------------------------
+    def inspect_workflows(self):
+        p = self.ctx.profile
+        folder = p.v11.project_dir
+        if not folder:
+            folder = QFileDialog.getExistingDirectory(self, "Choose the game's project folder", str(Path.home()))
+            if not folder:
+                return
+            p.v11.project_dir = folder
+            self.ctx.mark_dirty()
+        if QMessageBox.question(self, "Read workflow files", f"Read the GitHub workflow files under:\n{folder}\n\nThey are only read; "
+                                "nothing is changed or committed, and no GitHub account is contacted.") != QMessageBox.Yes:
+            return
+        try:
+            info = discovery.inspect_workflows(folder)
+            names = names_for_profile(p)
+        except (discovery.DiscoveryError, ValueError, OSError) as exc:
+            QMessageBox.warning(self, "Inspect Workflows", str(exc))
+            return
+        dlg = WorkflowDialog(names, info, p.v11.workflow_choice, self)
+        if dlg.exec() != WorkflowDialog.Accepted:
+            return
+        try:
+            discovery.apply_workflow_choice(p, info, dlg.choice(), dlg.mapping())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Inspect Workflows", str(exc))
+            return
+        self.ctx.mark_dirty()
+        self.refresh()
+        self.ctx.message.emit("Decision saved in the manager. No repository file, secret or signing identity was changed.", "success")

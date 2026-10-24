@@ -81,7 +81,8 @@ class IdentityRecord:
         return bool(self.backups)
 
     def public_summary(self) -> dict:
-        return {"alias": self.alias, "fingerprint_sha256": self.fingerprint_sha256}
+        return {"alias": self.alias, "fingerprint_sha256": self.fingerprint_sha256,
+                "store_type": self.store_type, "key_password_matches_store": self.key_password_matches_store}
 
 
 class VaultError(Exception):

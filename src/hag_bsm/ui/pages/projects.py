@@ -6,7 +6,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHea
                                QMessageBox, QTableWidget, QTableWidgetItem)
 
 from ...model import CHANNEL_LABELS, PLATFORM_BY_KEY, Profile
+from ...profile_import import decline, import_candidate, scan
 from ...profiles import BrokenProfile, ProfileError, ProfileStore
+from ..dialogs import ProfileDiscoveryDialog
 from ..widgets import Card, button, muted_label
 from .base import Page
 
@@ -44,6 +46,8 @@ class ProjectsPage(Page):
         self.dup_btn = button("Duplicate", tooltip="Copy the selected project to a new profile", slot=self.duplicate)
         self.rename_btn = button("Rename", tooltip="Rename the selected project", slot=self.rename)
         self.delete_btn = button("Delete", "Danger", "Delete the selected project profile", self.delete)
+        self.scan_btn = button("Scan for Profiles…", tooltip="Look for saved projects that are not in this list",
+                               slot=self.scan_dialog)
         self.import_btn = button("Import Profile…", tooltip="Import a profile exported from this application",
                                  slot=self.import_profile)
         self.export_btn = button("Export Profile…", tooltip="Export the selected profile (contains no secrets)",
@@ -51,6 +55,7 @@ class ProjectsPage(Page):
         for b in (self.new_btn, self.open_btn, self.save_btn, self.dup_btn, self.rename_btn, self.delete_btn):
             bar.addWidget(b)
         bar.addStretch(1)
+        bar.addWidget(self.scan_btn)
         bar.addWidget(self.import_btn)
         bar.addWidget(self.export_btn)
         self.content.addLayout(bar)
@@ -128,6 +133,59 @@ class ProjectsPage(Page):
         for b in (self.open_btn, self.dup_btn, self.rename_btn, self.delete_btn, self.export_btn):
             b.setEnabled(has)
         self.save_btn.setEnabled(bool(self.ctx.profile) and self.ctx.dirty)
+
+    # --- profile discovery ---
+    def scan_dialog(self):
+        folder = QFileDialog.getExistingDirectory(self, "Choose a folder to scan (Cancel scans only the application's own folders)",
+                                                  str(Path.home()))
+        self.scan_profiles(folder or None, force=True)
+
+    def scan_profiles(self, extra_dir=None, force=False, quiet=False):
+        """Offer saved profiles found outside the list. Nothing is imported without the owner's choice."""
+        try:
+            found = scan(self.ctx.paths.config_root, self.ctx.store, [extra_dir] if extra_dir else [], force)
+        except OSError as exc:
+            if not quiet:
+                QMessageBox.warning(self, "Scan for Profiles", f"The scan failed: {exc}")
+            return
+        offered = [c for c in found if c.importable and (force or c.status != "declined")]
+        invalid = [c for c in found if c.status == "invalid"]
+        if not offered:
+            if not quiet:
+                extra = f" {len(invalid)} file(s) looked like profiles but could not be read." if invalid else ""
+                QMessageBox.information(self, "Scan for Profiles", "No new saved projects were found." + extra)
+            return
+        dlg = ProfileDiscoveryDialog(offered, self)
+        dlg.exec()
+        chosen = [] if dlg.action == "skip" else (offered if dlg.action == "all" else dlg.selected())
+        declined = [c for c in offered if c not in chosen]
+        if declined:
+            decline(self.ctx.paths.config_root, declined)   # not offered again unless the file changes or you rescan
+        done, errors = 0, []
+        for c in chosen:
+            mode = "new"
+            if c.status == "conflict" or self.ctx.store.exists(c.profile.id):
+                box = QMessageBox(QMessageBox.Question, "Project already exists",
+                                  f"“{c.profile.name}” already exists with different settings.", parent=self)
+                copy_btn = box.addButton("Import as Copy", QMessageBox.AcceptRole)
+                replace_btn = box.addButton("Replace (a backup is kept)", QMessageBox.DestructiveRole)
+                box.addButton("Skip", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() is copy_btn:
+                    mode = "copy"
+                elif box.clickedButton() is replace_btn:
+                    mode = "replace"
+                else:
+                    continue
+            try:
+                import_candidate(self.ctx.store, self.ctx.paths.config_root, c, mode)
+                done += 1
+            except ProfileError as exc:
+                errors.append(f"{c.path.name}: {exc}")
+        self.ctx.profilesChanged.emit()
+        if errors:
+            QMessageBox.warning(self, "Some imports failed", "\n".join(errors) + "\n\nNothing was changed for those files.")
+        self.ctx.message.emit(f"Imported {done} project(s). Originals were left untouched and backed up.", "success" if done else "info")
 
     # --- actions ---
     def confirm_discard(self) -> bool:

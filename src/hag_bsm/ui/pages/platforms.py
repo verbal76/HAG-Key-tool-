@@ -104,7 +104,7 @@ class PlatformsPage(Page):
     def update_validation(self):
         if not self.ctx.profile:
             return
-        issues = validate_profile(self.ctx.profile)
+        issues = validate_profile(self.ctx.profile, None, self.ctx.others())
         set_field_message(self.platforms_msg, issues, "platforms")
         set_field_message(self.stores_msg, issues, "stores")
         for key, lbl in self.format_msgs.items():

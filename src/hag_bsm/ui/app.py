@@ -69,6 +69,7 @@ def run(argv=None) -> int:
     win = MainWindow(ctx)
     win.open_last_profile()
     win.show()
+    QTimer.singleShot(500, lambda: win.projects_page.scan_profiles(quiet=True))
     log.info("Started %s %s", APP_NAME, __version__)
     code = app.exec()
     dispose(app)
@@ -100,7 +101,7 @@ def self_test(result_path: str) -> int:
             app.processEvents()
             if win.stack.currentIndex() != row:
                 raise RuntimeError(f"navigation to page {row} failed")
-        prompt_text = win.pages[5].text.toPlainText()
+        prompt_text = win.pages[6].text.toPlainText()
         if "Self Test Game" not in prompt_text:
             raise RuntimeError("prompt was not generated")
         lines.append(f"keytool: {ctx.tools.keytool}")

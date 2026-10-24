@@ -6,8 +6,10 @@ cannot leak them.
 """
 
 from . import APP_NAME, __version__
+from .credentials import CONFIGURED, MISSING, NA, REQUIRED, requirements
+from .discovery import WorkflowInfo, compare_names
 from .model import APPLE_PLATFORMS, CHANNEL_LABELS, PLATFORM_BY_KEY, STORE_LABELS, Profile
-from .secret_names import ROLE_DESCRIPTIONS, names_for_profile
+from .secret_names import ROLE_DESCRIPTIONS, ROLES, names_for_profile, secret_names
 
 RULE = "=" * 72
 SUB = "-" * 72
@@ -46,7 +48,10 @@ def _identifiers(p: Profile) -> list:
     plats = p.enabled_platforms()
     lines = []
     if "android" in plats:
-        lines.append(f"Android package name (applicationId): {p.android_package or '(not set)'}")
+        lines.append(f"Android package name (applicationId): {p.effective_android_id() or '(not set)'}")
+        if p.v11.use_dev_identifier:
+            lines.append(f"Planned production Android identifier: {p.android_package or '(not set)'} (a DIFFERENT application "
+                         "identity from the development one; do not switch without the owner's written approval)")
     if "ios" in plats:
         lines.append(f"iOS / iPadOS bundle identifier: {p.apple_bundle_id or '(not set)'}")
     if "macos" in plats:
@@ -64,6 +69,111 @@ def artifact_names(p: Profile) -> list:
     for key in p.enabled_platforms():
         for fmt in p.formats(key):
             out.append(f"{base}-{key}.{_ARTIFACT_EXT[(key, fmt)]}")
+    return out
+
+
+_DECISIONS = {
+    "adapt_workflow": "Adapt the workflow to the manager's secret names.",
+    "use_workflow_names": "Use the secret names the workflow already reads.",
+    "custom_mapping": "Use the custom secret names listed above.",
+}
+_ROLE_WORDS = {"keystore_base64": "keystore file", "keystore_password": "keystore password",
+               "key_alias": "key alias", "key_password": "key password"}
+
+
+def _workflow_lines(p: Profile, names: dict) -> list:
+    v, out = p.v11, []
+    if not v.workflow_info:
+        if v.project_kind == "existing":
+            out += ["Workflow secret compatibility: the manager has NOT inspected this repository's workflows. Inspect every",
+                    "  workflow and build file first, compare the signing secrets they read with the names above, and report any",
+                    "  mismatch before changing anything. Do not delete, rename or overwrite existing repository secrets."]
+        return out
+    info = WorkflowInfo.from_dict(v.workflow_info)
+    cmp = compare_names(names, info)
+    out.append(f"Workflow secret compatibility (read by the manager on {info.inspected_at[:10]}; files: {', '.join(info.files) or 'none'}):")
+    for role, mine, wf, status in cmp.rows:
+        shown = {"match": "matches", "mismatch": f"workflow reads {wf}", "not_referenced": "not referenced by the workflow",
+                 "literal": f"workflow sets a literal alias ({info.literal_alias})"}[status]
+        out.append(f"  - {_ROLE_WORDS[role]}: manager name {mine} - {shown}")
+    if cmp.note:
+        out.append(f"  {cmp.note}")
+    if v.workflow_choice:
+        out.append(f"Owner's decision: {_DECISIONS[v.workflow_choice]}")
+    if cmp.aligned:
+        out.append("  The workflow already reads the configured names; leave its secret references as they are.")
+    elif v.workflow_choice == "use_workflow_names":
+        out.append("  Leave the workflow's references unchanged. The signing values must exist in the repository under exactly the "
+                   "names above; if they do not, report it - do not create or replace secrets.")
+    else:
+        out.append("  Update every workflow reference to the names above (and fix any step that reads a differently named secret). "
+                   "Do not rename, delete or overwrite repository secrets; list any old names the owner may remove later. "
+                   "Do not commit anything beyond the workflow change.")
+    out.append("  A secret NAME is only a label. A name mismatch is never a reason to generate a new keystore or replace the "
+               "signing identity; the existing identity must be reused.")
+    return out
+
+
+def _project_status(p: Profile, identity: dict) -> list:
+    """Version 1.1 section. Empty (so the prompt is unchanged) when the profile has no v1.1 data."""
+    v = p.v11
+    if not v.to_dict():
+        return []
+    plats, d, out = p.enabled_platforms(), v.discovered, []
+    out += [SUB, "PROJECT STATUS AND PRESERVATION", SUB]
+    kind = {"existing": "EXISTING project: it is already in development. Preserve what it has; do not start over.",
+            "new": "NEW project: no earlier builds exist. Establish identifiers and signing as described here."}
+    out.append("Project type: " + kind.get(v.project_kind, "not specified."))
+    code = int(d.get("version_code") or 0)
+    if d:
+        out.append(f"Read by the manager from the project (engine: {d.get('engine') or 'unknown'}, {str(d.get('inspected_at', ''))[:10]}):")
+        for key, label in (("android_package", "Android identifier"), ("apple_bundle_id", "Apple bundle identifier"),
+                           ("macos_bundle_id", "macOS bundle identifier"), ("desktop_app_id", "desktop identifier"),
+                           ("version", "version")):
+            if d.get(key):
+                out.append(f"  - {label} in the project: {d[key]}")
+        if code:
+            out.append(f"  - build number / version code in the project: {code}")
+        for note in d.get("notes", []):
+            out.append(f"  - unresolved: {note}")
+    if v.project_kind == "existing":
+        out += ["Preservation rules for this existing project:",
+                "  - Keep the application identifiers exactly as listed above. Changing an Android package name"
+                + (" or Apple bundle identifier" if any(k in plats for k in APPLE_PLATFORMS) else "")
+                + " makes the platform treat the build as a different app. Change one only with the owner's written approval."]
+        if code:
+            out.append(f"  - Continue build numbering from {code}: the next release must use a higher number. Never reset or lower it. "
+                       f"(Current manager value: {p.build_number}.)")
+        out.append("  - Reuse the existing signing identity. Never generate or rotate a keystore as a side effect of this work.")
+    if d.get("android_package") and "android" in plats and p.effective_android_id() != d["android_package"]:
+        out.append(f"IDENTIFIER MIGRATION WARNING: the project uses {d['android_package']} but the manager is configured for "
+                   f"{p.effective_android_id() or '(empty)'}. That would be a different Android application that cannot update existing "
+                   "installs. Do not apply it unless the owner has approved the migration in writing.")
+    if v.use_dev_identifier:
+        out.append("A separate development identifier is in use, so development builds are a different application from production builds.")
+    if "android" in plats:
+        out += _workflow_lines(p, names_for_profile(p))
+        if identity.get("store_type") == "PKCS12":
+            out.append("Password note: the signing keystore is PKCS12, which uses ONE password for the keystore and the key. "
+                       "The keystore-password and key-password secrets must therefore hold the same value.")
+        elif identity and identity.get("key_password_matches_store") is False:
+            out.append("Password note: this keystore uses a different key password from its keystore password; keep the two "
+                       "secrets separate.")
+        out.append("Final verification: run `apksigner verify --print-certs` on every release APK and confirm the signer SHA-256 "
+                   "matches the expected fingerprint. A build signed with a different certificate cannot update an app installed "
+                   "with this one.")
+    out.append("Signing credentials by platform:")
+    present = bool(identity)
+    for r in requirements(p, present):
+        if r.level == "not_applicable" and r.status == NA:
+            continue
+        state = "configured" if r.status == CONFIGURED else ("MISSING" if r.level == REQUIRED else "not configured (optional)")
+        out.append(f"  - {r.label}: {r.level}, {state}")
+    gaps = [r.label for r in requirements(p, present) if r.level == REQUIRED and r.status == MISSING]
+    if gaps:
+        out.append("Missing configuration that prevents a reliable build: " + "; ".join(gaps)
+                   + ". Report these as blockers; do not work around them with placeholders or debug signing.")
+    out.append("")
     return out
 
 
@@ -107,6 +217,9 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
         w(f"Application icon (owner's local file, to be added to the repository if not already present): {p.icon_path}")
         w("")
 
+    for line in _project_status(p, identity):
+        w(line)
+
     if has_android:
         names = names_for_profile(p)
         w(SUB)
@@ -132,7 +245,7 @@ def generate_prompt(p: Profile, identity: dict = None) -> str:
           "properties. Never echo them, print them, or place them on a logged command line.")
         w("  - Release builds must fail with a clear error if any signing secret is missing. Never fall back "
           "to debug signing for a release artifact.")
-        w(f"  - Keep the package name {p.android_package or '(as already configured)'} unchanged. "
+        w(f"  - Keep the package name {p.effective_android_id() or '(as already configured)'} unchanged. "
           "Set versionCode to the build number and versionName to the version.")
         if "aab" in p.formats("android"):
             w("  - An AAB is the Google Play upload format and is not directly installable. If Google Play "

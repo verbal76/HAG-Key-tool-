@@ -68,5 +68,23 @@ def secret_names(use_suffix: bool = False, suffix: int = 2) -> dict:
     return names
 
 
+def custom_names(mapping: dict) -> dict:
+    """Validate an owner-chosen role -> secret name mapping. Raises ValueError with a plain message."""
+    missing = [r for r in ROLES if not str(mapping.get(r, "")).strip()]
+    if missing:
+        raise ValueError("Enter a secret name for every role (missing: " + ", ".join(missing) + ").")
+    names = {r: str(mapping[r]).strip() for r in ROLES}
+    for name in names.values():
+        err = validate_secret_name(name)
+        if err:
+            raise ValueError(err)
+    if len(set(names.values())) != len(names):
+        raise ValueError("Each secret needs its own name; two roles use the same name.")
+    return names
+
+
 def names_for_profile(profile) -> dict:
+    v = getattr(profile, "v11", None)
+    if v is not None and v.secret_mode in ("custom", "workflow"):
+        return custom_names(v.secret_custom)
     return secret_names(profile.secret_use_suffix, profile.secret_suffix)

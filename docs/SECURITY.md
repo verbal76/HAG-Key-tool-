@@ -94,6 +94,14 @@ After writing a backup, the app reads the file back, decrypts it, checks the key
 keystore with keytool using the stored passwords, and compares the certificate fingerprint. A backup is
 marked **verified** only if all of this succeeds. **Test Backup Recovery** repeats the check at any time.
 
+## Version 1.1 data handling
+
+- Project and workflow inspection only **read** the linked folder; the manager never writes to a game project or repository and
+  never contacts GitHub. Secret *names* found in workflows are stored; secret values are never read or stored from a repository.
+- Profile import writes a verified backup to `migration_backups`, never modifies or deletes the source, never copies private
+  signing material into profiles, and restores the previous state if a step fails.
+- Changing platforms, identifiers, secret names or the workflow decision never regenerates, replaces or deletes a signing identity.
+
 ## Limitations
 
 - The vault protection relies on the Windows user account. Anyone signed in as you, or malware running as
@@ -106,5 +114,6 @@ marked **verified** only if all of this succeeds. **Test Backup Recovery** repea
 - On non-Windows systems (development only) the vault uses a local key file instead of DPAPI, which is weaker.
 - Windows Authenticode certificates and Apple certificates/provisioning profiles are not created or stored
   by this version. The app only explains what they require.
+- The Android app is still version 1.0 and cannot open profiles that use version 1.1 features.
 - The app does not connect to GitHub, so it cannot check whether secret names already exist.
 - Without `apksigner`, APK checks can only read v1 (JAR) signature certificates and report them as unverified.

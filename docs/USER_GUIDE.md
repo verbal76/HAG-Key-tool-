@@ -201,3 +201,47 @@ may use a different debug key, so you might have to uninstall the previous test 
 newer one. Uninstalling deletes the app's projects and vault, so **back up your signing identities and export
 your profiles before uninstalling.** A release-signed build will be needed before updates can install over
 each other.
+
+## Version 1.1: existing projects, identifiers and secret names
+
+### New screen: Project & Identifiers
+- **Project type:** mark a project as *New* or *Existing*. An existing project keeps the identifiers, build number and signing
+  identity it already has; the generated prompt says so explicitly.
+- **Project folder + Inspect Project:** link the game's folder (read-only). Godot, Unity and plain Android Gradle projects are
+  recognised. The manager reads the Android package name, Apple bundle identifier, version and build number, and shows them next to
+  your saved values and the manager's suggestion. For each field you choose: **keep the project's existing value (the default)**,
+  adopt the suggestion, or enter your own. Adopting a different identifier shows what it would change first (the platform treats
+  it as a different app). Values that cannot be read reliably stay unresolved; they are never guessed. Your game's files are never
+  modified; only the manager's saved profile changes.
+- **Suggest Identifiers:** proposes `com.<publisher>.<app>` for Android, Apple and desktop. Nothing is replaced unless you tick it.
+- **Development identifier:** an optional separate Android identifier such as `….mygame.dev`. It creates a different app (separate
+  installs and saves). Choosing the *Private Testing* channel does not add one.
+- **Identifier registry:** the manager warns when two of your projects use the same identifier on the same platform. Android and
+  Apple using the same text is fine. Identifiers are never changed for you.
+
+### Build numbers are never reset
+If the project is already at build 21, the manager adopts 21 and refuses to generate a prompt with a lower number.
+
+### GitHub Secrets: default, suffix or custom names
+Besides the default names and the numeric suffix you can enter **custom names** for the four secrets. **Inspect Workflows…** reads
+the project's `.github/workflows` files (read-only, after you confirm) and compares the secrets they use with the manager's names:
+
+- **A. Adapt the workflow to the manager's names** (recommended): the generated prompt tells Claude to update the workflow.
+- **B. Use the workflow's names:** the manager adopts the names the workflow already reads.
+- **C. Custom mapping:** you pick the four names.
+
+A name mismatch is never a reason to create a new keystore: the existing signing identity is reused in every case, and nothing is
+committed or uploaded by the manager.
+
+### Credentials by platform
+The Signing Identities screen lists only what your platforms need and marks each item **required**, **optional**, **configured**,
+**missing** or **not applicable**. Android needs the keystore and its four secrets. Windows code signing is optional. Plain Linux
+builds, and web builds without a deployment workflow, need nothing. iOS / iPadOS and macOS need Apple credentials, which this
+application cannot create; tick *I have set this up* when you have them. Deselecting a platform never deletes a stored identity.
+
+### Finding older saved projects
+At start-up, and with **Scan for Profiles…** on the Projects screen, the manager looks for saved project files that are not in
+your list (older formats, other folders). You can **Import All**, **Import Selected** or **Skip for Now**. Before an import a verified
+backup copy goes to the `migration_backups` folder next to your projects; the original file is never changed or deleted, and a failed
+import is rolled back. Skipped files are not offered again unless they change or you scan again. Nothing is uploaded anywhere.
+Projects you created with version 1.0 already appear in the list and are read as they are.

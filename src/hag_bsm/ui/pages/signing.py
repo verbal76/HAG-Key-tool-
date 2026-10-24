@@ -10,6 +10,7 @@ from ...guidance import GUIDANCE
 from ...model import PLATFORM_BY_KEY
 from ..dialogs import (BackupDialog, BackupFileDialog, GenerateIdentityDialog, ImportKeystoreDialog,
                        LinkIdentityDialog)
+from .requirements import RequirementsCard
 from ..widgets import Card, CopyField, SecretField, StatusBadge, button, muted_label
 from ..workers import run_task
 from .base import Page
@@ -133,6 +134,8 @@ class SigningPage(Page):
 
         self.content.addWidget(self.android_card)
         self.content.addWidget(self.apk_card)
+        self.req_card = RequirementsCard(ctx)
+        self.content.addWidget(self.req_card)
 
         # --- other platforms ---
         self.other_card = Card("Other platforms",
@@ -149,6 +152,7 @@ class SigningPage(Page):
         ctx.identitiesChanged.connect(self.refresh)
         ctx.toolsChanged.connect(self.refresh)
         ctx.profileEdited.connect(self._refresh_platforms)
+        ctx.profileEdited.connect(self.req_card.refresh)
         ctx.busyChanged.connect(lambda busy, _: self._update_buttons())
 
     # --- display ---
@@ -228,6 +232,7 @@ class SigningPage(Page):
             self.apk_status.set("")
             self.apk_card.hide()
         self._refresh_platforms()
+        self.req_card.refresh()
         self._update_buttons()
 
     def _refresh_platforms(self):

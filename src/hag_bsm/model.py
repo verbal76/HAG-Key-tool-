@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 
 from . import PUBLISHER
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 1       # profiles with no v1.1 data are still written as schema 1 (readable by v1.0 and Android)
+MAX_SCHEMA_VERSION = 2   # schema 2 = schema 1 + an optional "v11" object
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,45 @@ def _default_platforms() -> dict:
 
 
 @dataclass
+class V11:
+    """Version 1.1 additions. Only values that differ from the defaults are serialised."""
+    project_kind: str = ""              # "", "new" or "existing"
+    project_dir: str = ""               # linked project folder (read-only inspection)
+    use_dev_identifier: bool = False
+    android_dev_package: str = ""
+    discovered: dict = field(default_factory=dict)          # snapshot of the last project inspection
+    identifier_choices: dict = field(default_factory=dict)  # field -> existing / saved / generated / custom
+    secret_mode: str = ""               # "", default, suffix, custom, workflow
+    secret_custom: dict = field(default_factory=dict)       # role -> secret name
+    workflow_choice: str = ""           # "", adapt_workflow, use_workflow_names, custom_mapping
+    workflow_info: dict = field(default_factory=dict)       # snapshot of the last workflow inspection
+    windows_code_signing: bool = False
+    linux_package_signing: bool = False
+    web_deployment: bool = False
+    attested: list = field(default_factory=list)            # credential keys the owner marked as configured
+
+    def to_dict(self) -> dict:
+        default = V11()
+        return {k: copy.deepcopy(getattr(self, k)) for k in self.__dataclass_fields__
+                if getattr(self, k) != getattr(default, k)}
+
+    @classmethod
+    def from_dict(cls, raw) -> "V11":
+        if raw is None:
+            return cls()
+        if not isinstance(raw, dict):
+            raise ValueError("v11 must be an object")
+        default, out = cls(), cls()
+        for k, v in raw.items():
+            if k not in cls.__dataclass_fields__:
+                continue  # written by a newer build: ignore rather than fail
+            if not isinstance(v, type(getattr(default, k))):
+                raise ValueError(f"v11 field {k!r} has the wrong type")
+            setattr(out, k, copy.deepcopy(v))
+        return out
+
+
+@dataclass
 class Profile:
     id: str = field(default_factory=new_id)
     name: str = ""
@@ -84,6 +124,7 @@ class Profile:
     secret_suffix: int = 2
     created_at: str = field(default_factory=now_iso)
     modified_at: str = field(default_factory=now_iso)
+    v11: V11 = field(default_factory=V11)
 
     # --- convenience -----------------------------------------------------
     def enabled_platforms(self) -> list:
@@ -103,11 +144,25 @@ class Profile:
     def slug(self) -> str:
         return slugify(self.name) or "app"
 
+    def effective_android_id(self) -> str:
+        """The Android identifier builds use: the development identifier when one is selected."""
+        if self.v11.use_dev_identifier and self.v11.android_dev_package.strip():
+            return self.v11.android_dev_package.strip()
+        return self.android_package.strip()
+
     def clone(self) -> "Profile":
         return Profile.from_dict(self.to_dict())
 
     # --- serialisation ---------------------------------------------------
     def to_dict(self) -> dict:
+        d = self._base_dict()
+        extra = self.v11.to_dict()
+        if extra:
+            d["schema_version"] = 2
+            d["v11"] = extra
+        return d
+
+    def _base_dict(self) -> dict:
         return {
             "schema_version": SCHEMA_VERSION,
             "id": self.id,
@@ -136,7 +191,7 @@ class Profile:
         """Build a profile from current-schema data. Raises ValueError on malformed input."""
         if not isinstance(d, dict):
             raise ValueError("profile data must be a JSON object")
-        if d.get("schema_version") != SCHEMA_VERSION:
+        if d.get("schema_version") not in (SCHEMA_VERSION, MAX_SCHEMA_VERSION):
             raise ValueError(f"unsupported profile schema version {d.get('schema_version')!r}")
         pid = d.get("id")
         if not isinstance(pid, str) or not re.fullmatch(r"[0-9a-f]{32}", pid):
@@ -205,4 +260,5 @@ class Profile:
             secret_suffix=suffix,
             created_at=s(d, "created_at", now_iso()),
             modified_at=s(d, "modified_at", now_iso()),
+            v11=V11.from_dict(d.get("v11")),
         )

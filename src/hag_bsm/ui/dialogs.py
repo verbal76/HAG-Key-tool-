@@ -339,3 +339,243 @@ class LinkIdentityDialog(_Dialog):
 def confirm(parent, title, text) -> bool:
     return QMessageBox.question(parent, title, text, QMessageBox.Yes | QMessageBox.Cancel,
                                 QMessageBox.Cancel) == QMessageBox.Yes
+
+
+# --- version 1.1 dialogs ---------------------------------------------------------------------------------------
+
+import re as _re  # noqa: E402
+
+from PySide6.QtWidgets import QButtonGroup, QGridLayout, QPushButton, QRadioButton, QScrollArea, QWidget  # noqa: E402
+
+from ..discovery import compare_names, workflow_options  # noqa: E402
+from ..identifiers import plan_changes, propose_identifiers  # noqa: E402
+from ..secret_names import ROLES, ROLE_DESCRIPTIONS, custom_names  # noqa: E402
+from ..validation import validate_android_package, validate_bundle_id  # noqa: E402
+
+
+def _scroll(inner: QWidget) -> QScrollArea:
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setWidget(inner)
+    area.setMinimumHeight(260)
+    return area
+
+
+class InspectProjectDialog(_Dialog):
+    """Compare what the game project uses with what the manager has saved, and let the owner decide each field."""
+
+    CHOICE_LABELS = {"existing": "Keep the project's existing value (recommended)", "saved": "Keep the manager's saved value",
+                     "generated": "Adopt the suggested value", "custom": "Enter a custom value"}
+
+    def __init__(self, profile, discovered, parent=None):
+        super().__init__("Inspect Project", parent, 780)
+        self.profile, self.d, self.diffs = profile, discovered, plan_changes(profile, discovered)
+        engine = discovered.engine.capitalize() if discovered.engine else "not recognised"
+        self.lay.addWidget(muted_label(
+            f"Engine: {engine}. This is a read-only inspection; nothing in the project folder is changed. Decisions below only "
+            "change the manager's saved profile, and nothing is applied until you press Apply."))
+        if discovered.platforms:
+            chosen = ", ".join(profile.enabled_platforms()) or "none"
+            self.lay.addWidget(muted_label(f"Platforms the project exports for: {', '.join(discovered.platforms)}. "
+                                           f"Selected in the manager: {chosen}."))
+        for note in discovered.notes:
+            self.lay.addWidget(StatusBadge(note, "warning"))
+        inner = QWidget()
+        form = QVBoxLayout(inner)
+        self.rows = {}
+        if not self.diffs:
+            form.addWidget(muted_label("No values could be read from the project, so there is nothing to compare."))
+        for diff in self.diffs:
+            box = QVBoxLayout()
+            box.addWidget(QLabel(f"<b>{diff.label}</b>"))
+            box.addWidget(muted_label(f"Manager (saved): {diff.saved or '—'}    Project uses: {diff.existing or 'unresolved'}"
+                                      + (f"    Suggested: {diff.generated}" if diff.generated and diff.kind == "identifier" else "")))
+            combo = QComboBox()
+            for key in ("existing", "saved", "generated", "custom"):
+                if key == "existing" and not diff.existing or key == "saved" and not diff.saved:
+                    continue
+                if key == "generated" and not (diff.generated and diff.kind == "identifier"):
+                    continue
+                combo.addItem(self.CHOICE_LABELS[key], key)
+            combo.setCurrentIndex(max(0, combo.findData(diff.default_choice)))
+            edit = QLineEdit()
+            edit.setPlaceholderText("Custom value")
+            edit.setEnabled(combo.currentData() == "custom")
+            combo.currentIndexChanged.connect(lambda _, c=combo, e=edit: e.setEnabled(c.currentData() == "custom"))
+            box.addWidget(combo)
+            box.addWidget(edit)
+            if diff.kind == "identifier":
+                box.addWidget(muted_label(diff.consequence))
+            form.addLayout(box)
+            self.rows[diff.field] = (combo, edit)
+        form.addStretch(1)
+        self.lay.addWidget(_scroll(inner))
+        self.buttons.button(QDialogButtonBox.Ok).setText("Apply")
+        self.finish_layout()
+
+    def values(self) -> dict:
+        return {f: (c.currentData(), e.text().strip()) for f, (c, e) in self.rows.items()}
+
+    def risky(self) -> list:
+        """Identifier changes that would make the platform see a different application."""
+        out = []
+        for diff in self.diffs:
+            choice, custom = self.values()[diff.field]
+            new = {"generated": diff.generated, "custom": custom}.get(choice, "")
+            if diff.kind == "identifier" and diff.existing and new and new != diff.existing:
+                out.append((diff, new))
+        return out
+
+    def validate(self):
+        for diff in self.diffs:
+            choice, custom = self.values()[diff.field]
+            if choice != "custom":
+                continue
+            if not custom:
+                return f"Enter a custom value for {diff.label}, or choose another option."
+            err = ""
+            if diff.field == "android_package":
+                err = validate_android_package(custom)
+            elif diff.field in ("apple_bundle_id", "macos_bundle_id"):
+                err = validate_bundle_id(custom)
+            elif diff.field == "build_number" and not custom.isdigit():
+                err = "The build number must be a whole number."
+            elif diff.field == "version" and not _re.fullmatch(r"\d+(\.\d+){0,3}", custom):
+                err = "Use a version made of numbers separated by periods."
+            if err:
+                return err
+        return ""
+
+
+class SuggestIdentifiersDialog(_Dialog):
+    """Show suggested identifiers; nothing changes unless the owner ticks it."""
+
+    def __init__(self, profile, parent=None):
+        super().__init__("Suggested Identifiers", parent, 640)
+        self.ids = propose_identifiers(profile.publisher, profile.name)
+        self.lay.addWidget(muted_label(
+            "These are suggestions built from the publisher and application name. Each platform stays independently editable. "
+            + ("This is an existing project: replacing an identifier it already uses makes the platform treat builds as a different "
+               "application, so the boxes start unticked for fields that already have a value." if profile.v11.project_kind == "existing"
+               else "Boxes are ticked only for empty fields.")))
+        plats = profile.enabled_platforms()
+        rows = [("android_package", "Android package name", self.ids["android"], profile.android_package, "android" in plats),
+                ("apple_bundle_id", "Apple bundle identifier", self.ids["apple"], profile.apple_bundle_id,
+                 "ios" in plats or "macos" in plats),
+                ("desktop_app_id", "Desktop identifier", self.ids["desktop"], profile.desktop_app_id,
+                 "windows" in plats or "linux" in plats),
+                ("android_dev_package", "Development Android identifier (optional, a different app)", self.ids["android_dev"],
+                 profile.v11.android_dev_package, "android" in plats)]
+        self.checks = {}
+        for field, label, value, current, applies in rows:
+            if not applies:
+                continue
+            cb = QCheckBox(f"{label}: {value}" + (f"   (currently {current})" if current else ""))
+            cb.setChecked(not current)
+            cb.setEnabled(value != current)
+            self.checks[field] = (cb, value)
+            self.lay.addWidget(cb)
+        if not self.checks:
+            self.lay.addWidget(muted_label("Select platforms first; suggestions are only made for the selected ones."))
+        self.buttons.button(QDialogButtonBox.Ok).setText("Apply Ticked")
+        self.finish_layout()
+
+    def accepted_values(self) -> dict:
+        return {f: v for f, (cb, v) in self.checks.items() if cb.isChecked() and cb.isEnabled()}
+
+
+class WorkflowDialog(_Dialog):
+    """Compare the workflow's signing secrets with the manager's names and let the owner choose how to reconcile."""
+
+    def __init__(self, configured: dict, info, current_choice: str = "", parent=None):
+        super().__init__("Workflow Secret Names", parent, 760)
+        self.configured, self.info = configured, info
+        self.cmp = compare_names(configured, info)
+        self.lay.addWidget(muted_label(
+            f"Read-only inspection of {', '.join(info.files) or 'no workflow files'}. A secret NAME is only a label; changing it "
+            "never changes or regenerates the signing key."))
+        if self.cmp.note:
+            self.lay.addWidget(StatusBadge(self.cmp.note, "warning"))
+        grid = QGridLayout()
+        for c, h in enumerate(("Secret", "Manager name", "Workflow reads", "Result")):
+            grid.addWidget(QLabel(f"<b>{h}</b>"), 0, c)
+        words = {"match": "Matches", "mismatch": "Different", "literal": f"Literal alias in workflow ({info.literal_alias})",
+                 "not_referenced": "Not referenced"}
+        for r, (role, mine, wf, status) in enumerate(self.cmp.rows, 1):
+            for c, text in enumerate((ROLE_DESCRIPTIONS[role], mine, wf or "—", words[status])):
+                lbl = QLabel(text)
+                lbl.setObjectName("Mono" if c in (1, 2) else "Muted")
+                grid.addWidget(lbl, r, c)
+        self.lay.addLayout(grid)
+        if self.cmp.rows and self.cmp.aligned:
+            self.lay.addWidget(StatusBadge("The workflow already reads the manager's names. Nothing needs to change.", "info"))
+        self.group, self.radios = QButtonGroup(self), {}
+        for key, label, desc in workflow_options(configured):
+            rb = QRadioButton(label)
+            rb.setToolTip(desc)
+            self.group.addButton(rb)
+            self.radios[key] = rb
+            self.lay.addWidget(rb)
+            self.lay.addWidget(muted_label(desc))
+        self.radios[current_choice if current_choice in self.radios else "adapt_workflow"].setChecked(True)
+        self.edits = {}
+        form = QFormLayout()
+        for role in ROLES:
+            e = QLineEdit(configured[role])
+            e.setObjectName("Mono")
+            self.edits[role] = e
+            form.addRow(ROLE_DESCRIPTIONS[role] + ":", e)
+        self.custom_box = QWidget()
+        self.custom_box.setLayout(form)
+        self.lay.addWidget(self.custom_box)
+        self.radios["custom_mapping"].toggled.connect(self.custom_box.setVisible)
+        self.custom_box.setVisible(self.radios["custom_mapping"].isChecked())
+        self.buttons.button(QDialogButtonBox.Ok).setText("Apply Decision")
+        self.finish_layout()
+
+    def choice(self) -> str:
+        return next(k for k, rb in self.radios.items() if rb.isChecked())
+
+    def mapping(self) -> dict:
+        return {r: e.text().strip() for r, e in self.edits.items()}
+
+    def validate(self):
+        if self.choice() == "custom_mapping":
+            try:
+                custom_names(self.mapping())
+            except ValueError as exc:
+                return str(exc)
+        return ""
+
+
+class ProfileDiscoveryDialog(_Dialog):
+    """Offer profiles found outside the normal list. Nothing is imported without a click."""
+
+    def __init__(self, candidates, parent=None):
+        super().__init__("Saved Projects Found", parent, 700)
+        self.candidates, self.action = candidates, "skip"
+        self.lay.addWidget(muted_label(
+            "These saved project profiles were found but are not in your project list. Importing keeps the original file untouched "
+            "and first stores a verified backup copy. Signing identities are never changed."))
+        self.list = QListWidget()
+        for c in candidates:
+            label = {"new": "new", "conflict": "same project already exists, with different settings",
+                     "declined": "skipped earlier"}.get(c.status, c.status)
+            item = QListWidgetItem(f"{c.profile.name or 'Untitled'} — {c.path.name} ({c.fmt}; {label})")
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            self.list.addItem(item)
+        self.lay.addWidget(self.list)
+        row = QHBoxLayout()
+        for text, action, kind in (("Import All", "all", "Primary"), ("Import Selected", "selected", ""), ("Skip for Now", "skip", "")):
+            b = button(text, kind, slot=lambda _=False, a=action: self._done(a))
+            row.addWidget(b)
+        row.addStretch(1)
+        self.lay.addLayout(row)
+
+    def _done(self, action):
+        self.action = action
+        self.accept()
+
+    def selected(self) -> list:
+        return [c for c, i in zip(self.candidates, range(self.list.count())) if self.list.item(i).checkState() == Qt.Checked]

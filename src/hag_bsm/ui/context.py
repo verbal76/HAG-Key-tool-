@@ -74,6 +74,12 @@ class AppContext(QObject):
         self.message.emit(f"Saved “{self.profile.name or 'Untitled'}”.", "success")
         return True
 
+    def others(self) -> list:
+        """The manager's other saved projects (for the identifier registry)."""
+        from ..model import Profile
+        mine = self.profile.id if self.profile else None
+        return [x for x in self.store.list() if isinstance(x, Profile) and x.id != mine]
+
     # --- identity helpers ---
     def identity(self):
         if self.profile and self.profile.android_identity_id and self.vault.exists(self.profile.android_identity_id):

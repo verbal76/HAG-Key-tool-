@@ -157,7 +157,7 @@ class DetailsPage(Page):
         p = self.ctx.profile
         if not p:
             return
-        issues = validate_profile(p, self.ctx.vault.exists)
+        issues = validate_profile(p, self.ctx.vault.exists, self.ctx.others())
         for fld, lbl in self.msgs.items():
             set_field_message(lbl, issues, fld)
         plats = set(p.enabled_platforms())

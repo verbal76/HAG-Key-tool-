@@ -1,5 +1,23 @@
 # Release notes
 
+## 1.1.0 — Windows app (private test build)
+
+- **Existing-project discovery:** link a project folder and read its identifiers, version and build number (Godot, Unity, Android
+  Gradle). Existing values are preserved by default; build numbers can never go backwards; the game's files are never modified.
+- **Identifiers:** suggestions per platform, optional separate development identifier, local registry with duplicate warnings.
+- **Platform-aware credentials:** only the credentials the selected platforms need are shown (required / optional / configured /
+  missing / not applicable). Changing platforms never removes a stored identity.
+- **Secret names:** custom names, and read-only comparison with a project's CI workflows with options to adapt the workflow, adopt
+  its names or map custom ones. A name mismatch never leads to key regeneration.
+- **Profile discovery and import:** finds older or separately stored profiles; import is owner-approved, backed up and rolled back
+  on failure.
+- **Prompt:** adds a project-status section (new vs existing, preservation rules, identifier-migration warnings, workflow
+  decision, credential gaps). Profiles without v1.1 data produce exactly the same prompt as before.
+- **Compatibility:** profiles without v1.1 data are still saved as schema 1, readable by v1.0 and the Android app. Profiles using
+  v1.1 features are saved as schema 2; the Android app (still v1.0) refuses them with a clear "newer version" message rather than
+  losing data.
+- Not in this release: the Android app does not yet have the v1.1 features.
+
 ## 1.0.0 — private test build
 
 First version for owner testing.

@@ -14,7 +14,7 @@ channel. The app then:
 
 It is a configuration and signing utility. It does not build games, submit to stores or publish releases.
 
-> **Status:** private test build (v1.0.0). Not for public distribution.
+> **Status:** private test build. Windows app v1.1.0; the Android app is still v1.0. Not for public distribution.
 
 ## Download
 

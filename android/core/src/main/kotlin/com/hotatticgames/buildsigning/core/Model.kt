@@ -20,6 +20,8 @@ import java.util.UUID
 const val APP_NAME = "Hot Attic Games Build & Signing Manager"
 const val PUBLISHER = "Hot Attic Games"
 const val APP_VERSION = "1.0.0"
+/** Version shown in the generated prompt header; kept equal to the Windows app so prompts stay identical. */
+const val PROMPT_VERSION = "1.1.0"
 const val SCHEMA_VERSION = 1
 
 data class PlatformSpec(
